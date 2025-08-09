@@ -126,7 +126,8 @@ function startMonitoring(username, interval) {
     '-mode', 'automatic',
     '-automatic_interval', interval.toString(),
     '-output', recordingsDir + '/',
-    '-no-update-check'
+    '-no-update-check',
+    '--no-banner'
   ];
 
   console.log(`Starting monitoring for @${username} with ${interval}min interval`);
