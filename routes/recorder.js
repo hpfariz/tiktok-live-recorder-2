@@ -464,7 +464,7 @@ function startMonitoring(username, interval) {
           // Notify files API that recording finished
           notifyFileStatus(recording.filename, false);
           
-          // Schedule auto-upload after conversion completes
+          // Start monitoring for conversion completion
           scheduleAutoUploadAfterConversion(username, recording.filename);
         }
         
@@ -473,8 +473,41 @@ function startMonitoring(username, interval) {
       }
       
       // Check for conversion completion
-      if (log.includes('Finished converting') || log.includes('already in MP4 format')) {
+      if (log.includes('Finished converting')) {
         console.log(`✅ Conversion process completed for @${username}`);
+        
+        // If we have a filename and it was an FLV file, schedule auto-upload
+        if (recording.filename && recording.filename.includes('_flv.mp4')) {
+          const mp4Filename = recording.filename.replace('_flv.mp4', '.mp4');
+          console.log(`🔄 Conversion completed: ${recording.filename} -> ${mp4Filename}`);
+          
+          // Schedule auto-upload for 5 minutes after conversion completion
+          const autoUploadTimer = setTimeout(() => {
+            console.log(`⏰ Auto-upload timer triggered for @${username} (5 minutes after conversion)`);
+            startAutoUpload(username);
+            autoUploadTimers.delete(username);
+          }, 5 * 60 * 1000); // 5 minutes in milliseconds
+          
+          autoUploadTimers.set(username, autoUploadTimer);
+          console.log(`⏰ Auto-upload scheduled for @${username} in 5 minutes (after conversion)`);
+        }
+      }
+      
+      // Also check for "already in MP4 format" message
+      if (log.includes('already in MP4 format') || log.includes('skipping conversion')) {
+        console.log(`✅ File already in MP4 format, scheduling auto-upload for @${username}`);
+        
+        if (recording.filename) {
+          // Schedule auto-upload for 5 minutes
+          const autoUploadTimer = setTimeout(() => {
+            console.log(`⏰ Auto-upload timer triggered for @${username} (5 minutes after recording)`);
+            startAutoUpload(username);
+            autoUploadTimers.delete(username);
+          }, 5 * 60 * 1000); // 5 minutes in milliseconds
+          
+          autoUploadTimers.set(username, autoUploadTimer);
+          console.log(`⏰ Auto-upload scheduled for @${username} in 5 minutes (no conversion needed)`);
+        }
       }
       
       // Keep only last 50 logs
@@ -498,6 +531,44 @@ function startMonitoring(username, interval) {
     if (recording) {
       const logType = (log.includes('[!]') || log.includes('ERROR') || log.includes('error:')) ? 'error' : 'info';
       recording.logs.push({ type: logType, message: log, timestamp: new Date() });
+      
+      // Check for conversion completion in stderr as well
+      if (log.includes('Finished converting')) {
+        console.log(`✅ Conversion process completed for @${username} (from stderr)`);
+        
+        // If we have a filename and it was an FLV file, schedule auto-upload
+        if (recording.filename && recording.filename.includes('_flv.mp4')) {
+          const mp4Filename = recording.filename.replace('_flv.mp4', '.mp4');
+          console.log(`🔄 Conversion completed: ${recording.filename} -> ${mp4Filename}`);
+          
+          // Schedule auto-upload for 5 minutes after conversion completion
+          const autoUploadTimer = setTimeout(() => {
+            console.log(`⏰ Auto-upload timer triggered for @${username} (5 minutes after conversion)`);
+            startAutoUpload(username);
+            autoUploadTimers.delete(username);
+          }, 5 * 60 * 1000); // 5 minutes in milliseconds
+          
+          autoUploadTimers.set(username, autoUploadTimer);
+          console.log(`⏰ Auto-upload scheduled for @${username} in 5 minutes (after conversion)`);
+        }
+      }
+      
+      // Also check for "already in MP4 format" message in stderr
+      if (log.includes('already in MP4 format') || log.includes('skipping conversion')) {
+        console.log(`✅ File already in MP4 format, scheduling auto-upload for @${username} (from stderr)`);
+        
+        if (recording.filename) {
+          // Schedule auto-upload for 5 minutes
+          const autoUploadTimer = setTimeout(() => {
+            console.log(`⏰ Auto-upload timer triggered for @${username} (5 minutes after recording)`);
+            startAutoUpload(username);
+            autoUploadTimers.delete(username);
+          }, 5 * 60 * 1000); // 5 minutes in milliseconds
+          
+          autoUploadTimers.set(username, autoUploadTimer);
+          console.log(`⏰ Auto-upload scheduled for @${username} in 5 minutes (no conversion needed)`);
+        }
+      }
     }
   });
 
