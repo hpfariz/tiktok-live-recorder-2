@@ -159,7 +159,7 @@ router.post('/upload/:filename', async (req, res) => {
   const match = filename.match(/TK_([^_]+)_/);
   const username = match ? match[1] : 'unknown';
   
-  const remotePath = `drive:root/pop4u/tiktok-live-recorder/${username}/${filename}`;
+  const remotePath = `drive:pop4u/tiktok-live-recorder/${username}/${filename}`;
 
   // Add to upload queue
   uploadQueue.set(filename, {
@@ -207,7 +207,7 @@ router.post('/upload-all', async (req, res) => {
       const filePath = path.join(recordingsDir, filename);
       const match = filename.match(/TK_([^_]+)_/);
       const username = match ? match[1] : 'unknown';
-      const remotePath = `drive:root/pop4u/tiktok-live-recorder/${username}/${filename}`;
+      const remotePath = `drive:pop4u/tiktok-live-recorder/${username}/${filename}`;
 
       uploadQueue.set(filename, {
         status: 'uploading',
