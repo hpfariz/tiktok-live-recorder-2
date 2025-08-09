@@ -21,7 +21,6 @@ function logFileOperation(operation, filename, details = '') {
   };
   
   fileOperationsLog.push(logEntry);
-  console.log(`[FILE-OP] ${operation}: ${filename} ${details}`);
   
   // Keep only last 100 operations
   if (fileOperationsLog.length > 100) {
@@ -103,7 +102,6 @@ router.get('/', async (req, res) => {
         // First check our active recordings tracker (most reliable)
         if (isActivelyRecording(filename)) {
           isCurrentlyRecording = true;
-          console.log(`[STATUS] ${filename}: Marked as actively recording in tracker`);
         } else {
           // Only check file writing if not in active recordings
           // This prevents false positives after recording stops
@@ -112,11 +110,9 @@ router.get('/', async (req, res) => {
           // If file is older than 2 minutes, don't bother checking if it's being written
           if (fileAge > 120000) { // 2 minutes
             isCurrentlyRecording = false;
-            console.log(`[STATUS] ${filename}: File too old (${Math.round(fileAge/1000)}s), marking as completed`);
           } else {
             // File is recent, check if it's being written
             isCurrentlyRecording = await isFileBeingWritten(filePath);
-            console.log(`[STATUS] ${filename}: File age ${Math.round(fileAge/1000)}s, writing check: ${isCurrentlyRecording}`);
           }
         }
 
@@ -335,11 +331,8 @@ async function isFileBeingWritten(filePath) {
     // File is being written if size changed OR (recently modified AND size > 0)
     const isBeingWritten = sizeChanged || (recentlyModified && stats2.size > 0 && sizeChanged);
     
-    console.log(`[FILE-CHECK] ${path.basename(filePath)}: size1=${stats1.size}, size2=${stats2.size}, sizeChanged=${sizeChanged}, recentlyModified=${recentlyModified}, result=${isBeingWritten}`);
-    
     return isBeingWritten;
   } catch (error) {
-    console.log(`[FILE-CHECK] Error checking ${path.basename(filePath)}:`, error.message);
     return false;
   }
 }
