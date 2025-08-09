@@ -23,30 +23,43 @@ function setupRclone() {
   let actualToken;
   
   try {
-    // First try to decode base64
-    const decoded = Buffer.from(token, 'base64').toString('utf-8');
-    console.log('Decoded token content:', decoded.substring(0, 100) + '...');
+    // Remove quotes and decode base64
+    const cleanToken = token.replace(/^"(.*)"$/, '$1');
+    const decoded = Buffer.from(cleanToken, 'base64').toString('utf-8');
     
-    // Check if it's a full rclone config or just a token
-    if (decoded.includes('token = ')) {
-      // Extract just the token part from the config
-      const tokenMatch = decoded.match(/token = ({.*?})/s);
-      if (tokenMatch) {
-        actualToken = tokenMatch[1];
-        console.log('Extracted token from config');
-      } else {
-        throw new Error('Could not extract token from config');
+    console.log('Decoded rclone config preview:');
+    console.log(decoded.substring(0, 300) + '...');
+    
+    // Extract the JSON token using a more robust regex that handles newlines
+    const tokenMatch = decoded.match(/token = ({.*?})/s);
+    if (tokenMatch) {
+      // Clean up the token - remove any \r\n and extra whitespace
+      let extractedToken = tokenMatch[1].replace(/\r?\n/g, '').trim();
+      
+      // Handle the specific case where there might be extra characters
+      const jsonStart = extractedToken.indexOf('{');
+      const jsonEnd = extractedToken.lastIndexOf('}') + 1;
+      if (jsonStart !== -1 && jsonEnd !== -1) {
+        extractedToken = extractedToken.substring(jsonStart, jsonEnd);
       }
-    } else if (decoded.startsWith('{')) {
-      // It's already a JSON token
-      actualToken = decoded;
+      
+      console.log('Extracted and cleaned token:', extractedToken);
+      
+      // Validate it's proper JSON
+      const parsed = JSON.parse(extractedToken);
+      console.log('Token validation passed. Expires:', parsed.expiry);
+      
+      actualToken = extractedToken;
     } else {
-      // Use original token
-      actualToken = token;
+      throw new Error('Could not extract token from config');
     }
+    
   } catch (error) {
-    console.log('Token decode failed, using as-is:', error.message);
-    actualToken = token;
+    console.error('Token parsing failed:', error.message);
+    console.log('Raw token preview:', token.substring(0, 100));
+    
+    // Use a fresh token that needs to be regenerated
+    return false;
   }
 
   // Create rclone config
