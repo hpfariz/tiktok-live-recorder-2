@@ -33,11 +33,6 @@ class VideoManagement:
             logger.info(f"File {file} is already in MP4 format, skipping conversion")
             return
             
-        # Check if the file is actually FLV format (not just named with _flv)
-        if file.endswith('.mp4'):
-            logger.info(f"File {file} is already MP4 format, skipping conversion")
-            return
-
         logger.info("Converting {} to MP4 format...".format(file))
 
         if not VideoManagement.wait_for_file_release(file):
@@ -60,8 +55,14 @@ class VideoManagement:
             
             # Only remove source file if conversion was successful
             if os.path.exists(output_file):
-                os.remove(file)
-                logger.info("Finished converting {}\n".format(file))
+                # Verify the output file has content
+                output_size = os.path.getsize(output_file)
+                if output_size > 0:
+                    os.remove(file)
+                    logger.info("Finished converting {}\n".format(file))
+                else:
+                    logger.error(f"Conversion failed - output file {output_file} is empty")
+                    # Don't remove source file if conversion failed
             else:
                 logger.error(f"Conversion failed - output file {output_file} not created")
                 
