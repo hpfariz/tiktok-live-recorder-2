@@ -1,150 +1,74 @@
 const express = require('express');
 const { spawn } = require('child_process');
 const path = require('path');
+const fs = require('fs-extra');
 
 const router = express.Router();
 
-// Store active recording processes
-let activeRecordings = new Map();
+// Store active recording processes and monitoring users
+let activeRecordings = new Map(); // username -> recording info
+let monitoredUsers = new Map(); // username -> user info
 
-// Start recording endpoint
-router.post('/start-recording', (req, res) => {
+// Get all monitored users
+router.get('/monitored', (req, res) => {
+  const users = Array.from(monitoredUsers.entries()).map(([username, info]) => ({
+    username,
+    ...info,
+    isRecording: activeRecordings.has(username) && activeRecordings.get(username).status === 'recording'
+  }));
+  res.json(users);
+});
+
+// Add user to monitoring list
+router.post('/monitor', (req, res) => {
   const { username, interval } = req.body;
 
   if (!username) {
     return res.status(400).json({ error: 'Username is required' });
   }
 
-  if (activeRecordings.has(username)) {
-    return res.status(400).json({ error: 'Recording already in progress for this user' });
+  const cleanUsername = username.replace('@', '').trim();
+  
+  if (monitoredUsers.has(cleanUsername)) {
+    return res.status(400).json({ error: 'User is already being monitored' });
   }
 
-  try {
-    // Path to the Python script
-    const pythonScriptPath = path.join(__dirname, '../../src/main.py');
-    
-    // Command arguments for automatic mode with no update check
-    const args = [
-      pythonScriptPath,
-      '-user', username,
-      '-mode', 'automatic',
-      '-automatic_interval', interval || '5',
-      '-no-update-check'
-    ];
+  // Add to monitored users
+  monitoredUsers.set(cleanUsername, {
+    interval: interval || 5,
+    addedAt: new Date(),
+    status: 'monitoring'
+  });
 
-    // Spawn Python process
-    const pythonProcess = spawn('python3', args, {
-      cwd: path.join(__dirname, '../../src'),
-      stdio: ['pipe', 'pipe', 'pipe']
-    });
+  // Start monitoring process
+  startMonitoring(cleanUsername, interval || 5);
 
-    // Store the process
-    activeRecordings.set(username, {
-      process: pythonProcess,
-      startTime: new Date(),
-      interval: interval || 5,
-      logs: []
-    });
-
-    // Handle process output
-    pythonProcess.stdout.on('data', (data) => {
-      const log = data.toString();
-      console.log(`[${username}] stdout:`, log);
-      
-      // Store logs (keep last 100 lines)
-      const recording = activeRecordings.get(username);
-      if (recording) {
-        recording.logs.push({ type: 'stdout', message: log, timestamp: new Date() });
-        if (recording.logs.length > 100) {
-          recording.logs.shift();
-        }
-      }
-    });
-
-    pythonProcess.stderr.on('data', (data) => {
-      const log = data.toString();
-      console.error(`[${username}] stderr:`, log);
-      
-      // Store logs
-      const recording = activeRecordings.get(username);
-      if (recording) {
-        recording.logs.push({ type: 'stderr', message: log, timestamp: new Date() });
-        if (recording.logs.length > 100) {
-          recording.logs.shift();
-        }
-      }
-    });
-
-    pythonProcess.on('close', (code) => {
-      console.log(`[${username}] Process exited with code ${code}`);
-      
-      // Update recording status
-      const recording = activeRecordings.get(username);
-      if (recording) {
-        recording.exitCode = code;
-        recording.endTime = new Date();
-        recording.status = 'completed';
-      }
-      
-      // Remove from active recordings after a delay to allow log retrieval
-      setTimeout(() => {
-        activeRecordings.delete(username);
-      }, 60000); // Keep for 1 minute after completion
-    });
-
-    pythonProcess.on('error', (error) => {
-      console.error(`[${username}] Process error:`, error);
-      
-      const recording = activeRecordings.get(username);
-      if (recording) {
-        recording.error = error.message;
-        recording.status = 'error';
-      }
-    });
-
-    res.json({ 
-      message: 'Recording started successfully',
-      username,
-      interval: interval || 5,
-      startTime: new Date()
-    });
-
-  } catch (error) {
-    console.error('Error starting recording:', error);
-    res.status(500).json({ error: 'Failed to start recording: ' + error.message });
-  }
+  res.json({ 
+    message: 'User added to monitoring list',
+    username: cleanUsername,
+    interval: interval || 5
+  });
 });
 
-// Stop recording endpoint
-router.post('/stop-recording', (req, res) => {
-  const { username } = req.body;
-
-  if (!username) {
-    return res.status(400).json({ error: 'Username is required' });
+// Remove user from monitoring
+router.delete('/monitor/:username', (req, res) => {
+  const { username } = req.params;
+  
+  // Stop any active recording
+  if (activeRecordings.has(username)) {
+    const recording = activeRecordings.get(username);
+    if (recording.process && !recording.process.killed) {
+      recording.process.kill('SIGTERM');
+    }
+    activeRecordings.delete(username);
   }
 
-  const recording = activeRecordings.get(username);
-  if (!recording) {
-    return res.status(404).json({ error: 'No active recording found for this user' });
-  }
-
-  try {
-    // Kill the Python process
-    recording.process.kill('SIGTERM');
-    
-    // Update status
-    recording.status = 'stopped';
-    recording.endTime = new Date();
-
-    res.json({ 
-      message: 'Recording stopped successfully',
-      username,
-      endTime: new Date()
-    });
-
-  } catch (error) {
-    console.error('Error stopping recording:', error);
-    res.status(500).json({ error: 'Failed to stop recording: ' + error.message });
+  // Remove from monitoring
+  if (monitoredUsers.has(username)) {
+    monitoredUsers.delete(username);
+    res.json({ message: `Stopped monitoring @${username}` });
+  } else {
+    res.status(404).json({ error: 'User not found in monitoring list' });
   }
 });
 
@@ -153,22 +77,26 @@ router.get('/status/:username', (req, res) => {
   const { username } = req.params;
   
   const recording = activeRecordings.get(username);
-  if (!recording) {
+  const monitored = monitoredUsers.get(username);
+  
+  if (!recording && !monitored) {
     return res.json({ 
-      isActive: false,
+      isMonitored: false,
+      isRecording: false,
       username 
     });
   }
 
   res.json({
-    isActive: !recording.endTime,
+    isMonitored: !!monitored,
+    isRecording: !!recording && recording.status === 'recording',
     username,
-    startTime: recording.startTime,
-    endTime: recording.endTime,
-    interval: recording.interval,
-    status: recording.status || 'running',
-    error: recording.error,
-    exitCode: recording.exitCode
+    monitorInfo: monitored,
+    recordingInfo: recording ? {
+      startTime: recording.startTime,
+      status: recording.status,
+      filename: recording.filename
+    } : null
   });
 });
 
@@ -177,22 +105,125 @@ router.get('/active', (req, res) => {
   const activeList = Array.from(activeRecordings.entries()).map(([username, recording]) => ({
     username,
     startTime: recording.startTime,
-    endTime: recording.endTime,
-    interval: recording.interval,
-    status: recording.status || 'running',
-    isActive: !recording.endTime
+    status: recording.status,
+    filename: recording.filename
   }));
 
   res.json(activeList);
 });
 
-// Get logs for a specific recording
+// Start monitoring function
+function startMonitoring(username, interval) {
+  const pythonScriptPath = path.join(__dirname, '../src/main.py');
+  const recordingsDir = path.join(__dirname, '../recordings');
+  
+  // Ensure recordings directory exists
+  fs.ensureDirSync(recordingsDir);
+  
+  const args = [
+    pythonScriptPath,
+    '-user', username,
+    '-mode', 'automatic',
+    '-automatic_interval', interval.toString(),
+    '-output', recordingsDir + '/',
+    '-no-update-check'
+  ];
+
+  console.log(`Starting monitoring for @${username} with ${interval}min interval`);
+
+  const pythonProcess = spawn('python3', args, {
+    cwd: path.join(__dirname, '../src'),
+    stdio: ['pipe', 'pipe', 'pipe']
+  });
+
+  // Store the process
+  activeRecordings.set(username, {
+    process: pythonProcess,
+    startTime: new Date(),
+    status: 'monitoring',
+    logs: [],
+    filename: null
+  });
+
+  // Handle process output
+  pythonProcess.stdout.on('data', (data) => {
+    const log = data.toString();
+    console.log(`[${username}] ${log}`);
+    
+    const recording = activeRecordings.get(username);
+    if (recording) {
+      recording.logs.push({ type: 'stdout', message: log, timestamp: new Date() });
+      
+      // Check if recording started
+      if (log.includes('Started recording')) {
+        recording.status = 'recording';
+        const match = log.match(/TK_([^_]+)_([^_]+)_/);
+        if (match) {
+          recording.filename = `TK_${match[1]}_${match[2]}_flv.mp4`;
+        }
+      }
+      
+      // Check if recording finished
+      if (log.includes('Recording finished')) {
+        recording.status = 'monitoring';
+        recording.filename = null;
+      }
+      
+      // Keep only last 50 logs
+      if (recording.logs.length > 50) {
+        recording.logs = recording.logs.slice(-50);
+      }
+    }
+  });
+
+  pythonProcess.stderr.on('data', (data) => {
+    const log = data.toString();
+    console.error(`[${username}] ERROR: ${log}`);
+    
+    const recording = activeRecordings.get(username);
+    if (recording) {
+      recording.logs.push({ type: 'stderr', message: log, timestamp: new Date() });
+    }
+  });
+
+  pythonProcess.on('close', (code) => {
+    console.log(`[${username}] Process exited with code ${code}`);
+    
+    const recording = activeRecordings.get(username);
+    if (recording) {
+      recording.status = 'stopped';
+      recording.exitCode = code;
+    }
+    
+    // If user is still monitored and process wasn't manually stopped, restart
+    if (monitoredUsers.has(username) && code !== 0) {
+      console.log(`[${username}] Restarting monitoring in 30 seconds...`);
+      setTimeout(() => {
+        if (monitoredUsers.has(username)) {
+          startMonitoring(username, monitoredUsers.get(username).interval);
+        }
+      }, 30000);
+    }
+  });
+
+  pythonProcess.on('error', (error) => {
+    console.error(`[${username}] Process error:`, error);
+    
+    const recording = activeRecordings.get(username);
+    if (recording) {
+      recording.error = error.message;
+      recording.status = 'error';
+    }
+  });
+}
+
+// Get logs for a specific user
 router.get('/logs/:username', (req, res) => {
   const { username } = req.params;
   
   const recording = activeRecordings.get(username);
   if (!recording) {
-    return res.status(404).json({ error: 'No recording found for this user' });
+    return res.status(404).json({ error: 'No monitoring found for this user' });
   }
 
   res.json({

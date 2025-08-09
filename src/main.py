@@ -125,9 +125,10 @@ def main():
 
 
 if __name__ == "__main__":
-    # print the banner
-    from utils.utils import banner
-    banner()
+    # Don't print banner when run by web interface
+    if "--no-banner" not in sys.argv:
+        from utils.utils import banner
+        banner()
 
     # check and install dependencies
     from utils.dependencies import check_and_install_dependencies
