@@ -149,11 +149,11 @@ function startMonitoring(username, interval) {
   // Handle process output
   pythonProcess.stdout.on('data', (data) => {
     const log = data.toString();
-    console.log(`[${username}] ${log}`);
+    console.log(`[${username}] INFO: ${log}`);
     
     const recording = activeRecordings.get(username);
     if (recording) {
-      recording.logs.push({ type: 'stdout', message: log, timestamp: new Date() });
+      recording.logs.push({ type: 'info', message: log, timestamp: new Date() });
       
       // Check if recording started
       if (log.includes('Started recording')) {
@@ -179,11 +179,18 @@ function startMonitoring(username, interval) {
 
   pythonProcess.stderr.on('data', (data) => {
     const log = data.toString();
-    console.error(`[${username}] ERROR: ${log}`);
+    
+    // Don't treat all stderr as errors - some are just info messages
+    if (log.includes('[!]') || log.includes('ERROR') || log.includes('error:')) {
+      console.error(`[${username}] ERROR: ${log}`);
+    } else {
+      console.log(`[${username}] INFO: ${log}`);
+    }
     
     const recording = activeRecordings.get(username);
     if (recording) {
-      recording.logs.push({ type: 'stderr', message: log, timestamp: new Date() });
+      const logType = (log.includes('[!]') || log.includes('ERROR') || log.includes('error:')) ? 'error' : 'info';
+      recording.logs.push({ type: logType, message: log, timestamp: new Date() });
     }
   });
 
