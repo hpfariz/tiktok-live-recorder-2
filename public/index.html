@@ -407,7 +407,10 @@
             <div class="card">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
                     <h2>Recorded Files</h2>
-                    <button onclick="refreshFiles()" class="btn btn-primary btn-small">🔄 Refresh</button>
+                    <div>
+                        <button onclick="forceRefreshFileStatus()" class="btn btn-warning btn-small">🔧 Fix Stuck Status</button>
+                        <button onclick="refreshFiles()" class="btn btn-primary btn-small">🔄 Refresh</button>
+                    </div>
                 </div>
                 <div id="files-list" class="grid">
                     <div class="empty-state">Loading files...</div>
@@ -823,6 +826,26 @@
                         </div>
                     </div>
                 `).join('');
+            }
+        }
+
+        async function forceRefreshFileStatus() {
+            try {
+                // Clear any stuck recordings
+                const response = await fetch(`${API_BASE}/api/files/debug/clear-stuck`, {
+                    method: 'POST'
+                });
+
+                const data = await response.json();
+                
+                if (response.ok) {
+                    alert(`✅ ${data.message}`);
+                    loadFiles(); // Refresh the files list
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            } catch (error) {
+                alert('Failed to refresh status: ' + error.message);
             }
         }
 
