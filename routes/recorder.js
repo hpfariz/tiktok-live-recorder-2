@@ -8,6 +8,7 @@ const router = express.Router();
 // Store active recording processes and monitoring users
 let activeRecordings = new Map(); // username -> recording info
 let monitoredUsers = new Map(); // username -> user info
+let autoUploadTimers = new Map(); // username -> timer reference
 
 // Helper function to notify files API about recording status
 async function notifyFileStatus(filename, isRecording) {
@@ -24,6 +25,26 @@ async function notifyFileStatus(filename, isRecording) {
     }
   } catch (error) {
     console.log(`Error notifying file status for ${filename}:`, error.message);
+  }
+}
+
+// Helper function to start auto-upload for a user's files
+async function startAutoUpload(username) {
+  try {
+    const port = process.env.PORT || 10000;
+    const response = await fetch(`http://localhost:${port}/api/uploads/auto-upload/${username}`, {
+      method: 'POST'
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      console.log(`🔄 Auto-upload started for @${username}: ${data.message}`);
+    } else {
+      const errorData = await response.json();
+      console.log(`❌ Auto-upload failed for @${username}: ${errorData.error}`);
+    }
+  } catch (error) {
+    console.error(`Error starting auto-upload for @${username}:`, error.message);
   }
 }
 
@@ -182,7 +203,8 @@ function startMonitoring(username, interval) {
     startTime: new Date(),
     status: 'monitoring',
     logs: [],
-    filename: null
+    filename: null,
+    recordingEndTime: null
   });
 
   // Handle process output
@@ -198,6 +220,13 @@ function startMonitoring(username, interval) {
       if (log.includes('Started recording')) {
         recording.status = 'recording';
         
+        // Cancel any existing auto-upload timer since new recording started
+        if (autoUploadTimers.has(username)) {
+          clearTimeout(autoUploadTimers.get(username));
+          autoUploadTimers.delete(username);
+          console.log(`Cancelled previous auto-upload timer for @${username} (new recording started)`);
+        }
+        
         // Extract filename from log - it should be the actual MP4 filename
         const filenameMatch = log.match(/TK_[^_]+_[^_]+_[^.]+\.mp4/);
         if (filenameMatch) {
@@ -211,11 +240,23 @@ function startMonitoring(username, interval) {
       
       // Check if recording finished
       if (log.includes('Recording finished')) {
+        recording.recordingEndTime = new Date();
+        
         if (recording.filename) {
           console.log(`Recording finished: ${recording.filename}`);
           
           // Notify files API that recording finished
           notifyFileStatus(recording.filename, false);
+          
+          // Schedule auto-upload for 5 minutes after recording ends
+          const autoUploadTimer = setTimeout(() => {
+            console.log(`⏰ Auto-upload timer triggered for @${username} (5 minutes after recording ended)`);
+            startAutoUpload(username);
+            autoUploadTimers.delete(username);
+          }, 5 * 60 * 1000); // 5 minutes in milliseconds
+          
+          autoUploadTimers.set(username, autoUploadTimer);
+          console.log(`⏱️ Auto-upload scheduled for @${username} in 5 minutes`);
         }
         
         recording.status = 'monitoring';
@@ -273,9 +314,9 @@ function startMonitoring(username, interval) {
       recording.status = 'stopped';
       recording.exitCode = code;
       
-      // Check for converted MP4 files and auto-upload if they exist
+      // Check for converted MP4 files
       setTimeout(() => {
-        checkAndAutoUpload(username);
+        checkForCompletedRecordings(username);
       }, 5000); // Wait 5 seconds for any final file operations
     }
     
