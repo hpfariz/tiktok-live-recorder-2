@@ -556,10 +556,17 @@
                     fetch(`${API_BASE}/api/uploads`)
                 ]);
 
-                // Check if responses are JSON
-                const contentType = usersRes.headers.get('content-type');
-                if (!contentType || !contentType.includes('application/json')) {
-                    throw new Error('API returned non-JSON response');
+                // Check if users response is OK
+                if (!usersRes.ok) {
+                    throw new Error(`Users API returned ${usersRes.status}: ${usersRes.statusText}`);
+                }
+
+                // Check content type for users response
+                const usersContentType = usersRes.headers.get('content-type');
+                if (!usersContentType || !usersContentType.includes('application/json')) {
+                    const responseText = await usersRes.text();
+                    console.error('Non-JSON response from users API:', responseText.substring(0, 200));
+                    throw new Error('Users API returned HTML instead of JSON - check server routing');
                 }
 
                 const users = await usersRes.json();
@@ -579,18 +586,35 @@
                 
                 // Show error message to user
                 const container = document.getElementById('monitored-users');
-                container.innerHTML = `
-                    <div class="empty-state" style="color: #d32f2f;">
-                        <h3>⚠️ API Connection Error</h3>
-                        <p>Cannot connect to the backend API.</p>
-                        <p>Error: ${error.message}</p>
-                        <button onclick="loadDashboard()" class="btn btn-primary btn-small" style="margin-top: 15px;">
-                            🔄 Retry
-                        </button>
-                    </div>
-                `;
                 
-                // Reset stats to 0
+                let errorMessage = '';
+                if (error.message.includes('HTML instead of JSON')) {
+                    errorMessage = `
+                        <div class="empty-state" style="color: #d32f2f;">
+                            <h3>🔧 Server Configuration Issue</h3>
+                            <p>The API routes are not properly configured.</p>
+                            <p>This usually happens when the server is starting up.</p>
+                            <button onclick="loadDashboard()" class="btn btn-primary btn-small" style="margin-top: 15px;">
+                                🔄 Retry
+                            </button>
+                        </div>
+                    `;
+                } else {
+                    errorMessage = `
+                        <div class="empty-state" style="color: #d32f2f;">
+                            <h3>⚠️ API Connection Error</h3>
+                            <p>Cannot connect to the backend API.</p>
+                            <p>Error: ${error.message}</p>
+                            <button onclick="loadDashboard()" class="btn btn-primary btn-small" style="margin-top: 15px;">
+                                🔄 Retry
+                            </button>
+                        </div>
+                    `;
+                }
+                
+                container.innerHTML = errorMessage;
+                
+                // Reset stats to show error state
                 document.getElementById('stat-monitored').textContent = '?';
                 document.getElementById('stat-recording').textContent = '?';
                 document.getElementById('stat-files').textContent = '?';
