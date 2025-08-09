@@ -101,11 +101,8 @@ def main():
 
         # check for updates
         if args.update_check is True:
-            logger.info("Checking for updates...\n")
             if check_updates():
                 exit()
-        else:
-            logger.info("Skipped update check\n")
 
         # read cookies from the config file
         cookies = read_cookies()

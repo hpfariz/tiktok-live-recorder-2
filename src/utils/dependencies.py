@@ -58,7 +58,6 @@ def check_distro_library():
         import distro
         return True
     except ModuleNotFoundError:
-        logger.error("distro library is not installed")
         return False
 
 
@@ -67,7 +66,6 @@ def check_ffmpeg_library():
         import ffmpeg
         return True
     except ModuleNotFoundError:
-        logger.error("ffmpeg-python library is not installed")
         return False
 
 
@@ -76,7 +74,6 @@ def check_argparse_library():
         import argparse
         return True
     except ModuleNotFoundError:
-        logger.error("argparse library is not installed")
         return False
 
 
@@ -89,7 +86,6 @@ def check_curl_cffi_library():
         import curl_cffi
         return True
     except ModuleNotFoundError:
-        logger.error("curl_cffi library is not installed")
         return False
 
 
@@ -98,7 +94,6 @@ def check_requests_library():
         import requests
         return True
     except ModuleNotFoundError:
-        logger.error("requests library is not installed")
         return False
 
 
@@ -107,15 +102,11 @@ def check_pyrogram_library():
         import pyrogram
         return True
     except ModuleNotFoundError:
-        logger.error("pyrogram library is not installed")
         return False
 
 
 def install_requirements():
     try:
-        print()
-        logger.error('Installing requirements...\n')
-
         cmd = [
             sys.executable, "-m", "pip", "install", "-r", "requirements.txt"
         ]
@@ -128,15 +119,12 @@ def install_requirements():
             stderr=subprocess.STDOUT,
             check=True,
         )
-        logger.info("Requirements installed successfully\n")
     except SubprocessError as e:
         logger.error(f"Error: {e}")
         exit(1)
 
 
 def check_and_install_dependencies():
-    logger.info("Checking and Installing dependencies...")
-
     dependencies = [
         check_distro_library(),
         check_ffmpeg_library(),

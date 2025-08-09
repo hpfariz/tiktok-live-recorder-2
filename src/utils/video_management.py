@@ -30,19 +30,19 @@ class VideoManagement:
         """
         # Check if file actually needs conversion
         if not file.endswith('_flv.mp4'):
-            logger.info(f"File {file} is already in MP4 format, skipping conversion")
+            logger.info(f"File already in MP4 format, skipping conversion")
             return
             
-        logger.info("Converting {} to MP4 format...".format(file))
+        logger.info("Converting to MP4 format...")
 
         if not VideoManagement.wait_for_file_release(file):
-            logger.error(f"File {file} is still locked after waiting. Skipping conversion.")
+            logger.error(f"File is still locked after waiting. Skipping conversion.")
             return
 
         # Check if output file already exists
         output_file = file.replace('_flv.mp4', '.mp4')
         if os.path.exists(output_file):
-            logger.info(f"Output file {output_file} already exists, skipping conversion")
+            logger.info(f"Output file already exists, skipping conversion")
             os.remove(file)  # Remove the source file
             return
 
@@ -59,12 +59,12 @@ class VideoManagement:
                 output_size = os.path.getsize(output_file)
                 if output_size > 0:
                     os.remove(file)
-                    logger.info("Finished converting {}\n".format(file))
+                    logger.info("Finished converting")
                 else:
-                    logger.error(f"Conversion failed - output file {output_file} is empty")
+                    logger.error(f"Conversion failed - output file is empty")
                     # Don't remove source file if conversion failed
             else:
-                logger.error(f"Conversion failed - output file {output_file} not created")
+                logger.error(f"Conversion failed - output file not created")
                 
         except ffmpeg.Error as e:
             logger.error(f"ffmpeg error: {e.stderr.decode() if hasattr(e, 'stderr') else str(e)}")
