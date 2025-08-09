@@ -264,6 +264,26 @@ router.get('/auto-upload-status', (req, res) => {
   });
 });
 
+// Cancel auto-upload for a specific user
+router.delete('/cancel-auto-upload/:username', (req, res) => {
+  const { username } = req.params;
+  
+  if (autoUploadTimers.has(username)) {
+    clearTimeout(autoUploadTimers.get(username));
+    autoUploadTimers.delete(username);
+    
+    console.log(`Cancelled auto-upload timer for @${username}`);
+    res.json({ 
+      success: true,
+      message: `Auto-upload cancelled for @${username}` 
+    });
+  } else {
+    res.status(404).json({ 
+      error: `No auto-upload scheduled for @${username}` 
+    });
+  }
+});
+
 // Start monitoring function
 function startMonitoring(username, interval) {
   const pythonScriptPath = path.join(__dirname, '../src/main.py');
