@@ -141,6 +141,11 @@ router.get('/download/:filename', (req, res) => {
     return res.status(404).json({ error: 'File not found' });
   }
 
+  // Don't allow download of files currently being recorded
+  if (isActivelyRecording(filename)) {
+    return res.status(423).json({ error: 'File is currently being recorded and cannot be downloaded' });
+  }
+
   res.download(filePath, filename, (err) => {
     if (err) {
       console.error('Download error:', err);
@@ -162,6 +167,11 @@ router.delete('/:filename', async (req, res) => {
   
   if (!resolvedPath.startsWith(resolvedRecordingsDir)) {
     return res.status(403).json({ error: 'Access denied' });
+  }
+
+  // Don't allow deletion of files currently being recorded
+  if (isActivelyRecording(filename)) {
+    return res.status(423).json({ error: 'Cannot delete file that is currently being recorded' });
   }
 
   try {
