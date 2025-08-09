@@ -42,21 +42,27 @@ async function notifyFileStatus(filename, isRecording) {
           if (res.statusCode === 200) {
             console.log(`✅ Successfully notified: ${filename} ${isRecording ? 'started' : 'finished'}`);
           } else {
-            console.log(`Failed to notify file status for ${filename}: ${res.statusCode}`);
+            console.log(`❌ Failed to notify file status for ${filename}: HTTP ${res.statusCode}`);
           }
           resolve();
         });
       });
 
       req.on('error', (error) => {
-        console.log(`Error notifying file status for ${filename}:`, error.message);
+        console.log(`❌ Error notifying file status for ${filename}:`, error.message);
+        resolve();
+      });
+
+      req.on('timeout', () => {
+        console.log(`❌ Timeout notifying file status for ${filename}`);
+        req.destroy();
         resolve();
       });
 
       req.write(postData);
       req.end();
     } catch (error) {
-      console.log(`Error notifying file status for ${filename}:`, error.message);
+      console.log(`❌ Error notifying file status for ${filename}:`, error.message);
       resolve();
     }
   });
@@ -104,14 +110,20 @@ async function startAutoUpload(username) {
       });
 
       req.on('error', (error) => {
-        console.error(`Error starting auto-upload for @${username}:`, error.message);
+        console.error(`❌ Error starting auto-upload for @${username}:`, error.message);
+        resolve();
+      });
+
+      req.on('timeout', () => {
+        console.log(`❌ Timeout starting auto-upload for @${username}`);
+        req.destroy();
         resolve();
       });
 
       req.write(postData);
       req.end();
     } catch (error) {
-      console.error(`Error starting auto-upload for @${username}:`, error.message);
+      console.error(`❌ Error starting auto-upload for @${username}:`, error.message);
       resolve();
     }
   });
