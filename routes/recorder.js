@@ -605,4 +605,69 @@ router.get('/logs/:username', (req, res) => {
   });
 });
 
+// Debug endpoint to manually trigger auto-upload
+router.post('/debug/trigger-auto-upload/:username', (req, res) => {
+  const { username } = req.params;
+  
+  console.log(`🔧 DEBUG: Manually triggering auto-upload for @${username}`);
+  
+  // Clear any existing timer
+  if (autoUploadTimers.has(username)) {
+    clearTimeout(autoUploadTimers.get(username));
+    autoUploadTimers.delete(username);
+    console.log(`🚫 Cleared existing auto-upload timer for @${username}`);
+  }
+  
+  // Start auto-upload immediately
+  startAutoUpload(username);
+  
+  res.json({
+    success: true,
+    message: `Auto-upload triggered manually for @${username}`,
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Debug endpoint to check file status
+router.get('/debug/file-status/:username', async (req, res) => {
+  const { username } = req.params;
+  const recordingsDir = path.join(__dirname, '../recordings');
+  
+  try {
+    const files = await fs.readdir(recordingsDir);
+    const userFiles = files.filter(f => f.includes(`TK_${username}_`));
+    
+    const fileDetails = await Promise.all(userFiles.map(async (filename) => {
+      const filePath = path.join(recordingsDir, filename);
+      const stats = await fs.stat(filePath);
+      
+      return {
+        filename,
+        size: stats.size,
+        sizeFormatted: `${(stats.size / 1024 / 1024).toFixed(2)} MB`,
+        created: stats.birthtime,
+        modified: stats.mtime,
+        isFlv: filename.includes('_flv.mp4'),
+        isMp4: filename.endsWith('.mp4') && !filename.includes('_flv.mp4')
+      };
+    }));
+    
+    res.json({
+      username,
+      recordingsDir,
+      totalFiles: userFiles.length,
+      files: fileDetails,
+      hasAutoUploadScheduled: autoUploadTimers.has(username),
+      activeRecording: activeRecordings.has(username) ? {
+        status: activeRecordings.get(username).status,
+        filename: activeRecordings.get(username).filename
+      } : null
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 module.exports = router;
+
+});

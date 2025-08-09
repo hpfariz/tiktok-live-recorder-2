@@ -605,16 +605,57 @@ router.post('/debug/trigger-auto-upload/:username', async (req, res) => {
   console.log(`🔧 DEBUG: Manually triggering auto-upload for @${username}`);
   
   try {
-    const response = await fetch(`http://localhost:${process.env.PORT || 10000}/api/uploads/auto-upload/${username}`, {
-      method: 'POST'
+    // Call the auto-upload endpoint directly
+    const recordingsDir = path.join(__dirname, '../recordings');
+    const files = await fs.readdir(recordingsDir);
+    
+    // Find MP4 files for this user that haven't been uploaded yet
+    const userMp4Files = files.filter(file => {
+      const isForUser = file.includes(`TK_${username}_`);
+      const isMp4 = file.endsWith('.mp4');
+      const isNotFlv = !file.includes('_flv.mp4');
+      const notInQueue = !uploadQueue.has(file);
+      const notInHistory = !uploadHistory.has(file);
+      
+      return isForUser && isMp4 && isNotFlv && notInQueue && notInHistory;
     });
-    
-    const data = await response.json();
-    
+
+    if (userMp4Files.length === 0) {
+      return res.json({
+        success: true,
+        message: `No eligible files found for @${username}`,
+        filesFound: 0,
+        allFiles: files.filter(f => f.includes(`TK_${username}_`))
+      });
+    }
+
+    // Start uploads for all eligible files
+    const uploads = userMp4Files.map(filename => {
+      const filePath = path.join(recordingsDir, filename);
+      const remotePath = `drive:pop4u/tiktok-live-recorder/${username}/${filename}`;
+
+      uploadQueue.set(filename, {
+        status: 'uploading',
+        startTime: new Date(),
+        progress: 0,
+        remotePath,
+        username,
+        isAutoUpload: true
+      });
+
+      startUpload(filename, filePath, remotePath);
+      
+      return { filename, remotePath };
+    });
+
     res.json({
-      success: response.ok,
-      message: data.message,
-      data: data
+      success: true,
+      message: `Manual auto-upload started for @${username}: ${uploads.length} files`,
+      data: {
+        username,
+        filesFound: uploads.length,
+        uploads
+      }
     });
   } catch (error) {
     res.status(500).json({
