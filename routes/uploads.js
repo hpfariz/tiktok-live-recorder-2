@@ -231,11 +231,16 @@ router.post('/upload/:filename', async (req, res) => {
     return res.status(400).json({ error: 'Only MP4 files can be uploaded. Please wait for FLV to MP4 conversion to complete.' });
   }
 
+  // Don't allow upload of _flv.mp4 files (currently being recorded)
+  if (filename.includes('_flv.mp4')) {
+    return res.status(400).json({ error: 'Cannot upload file that is currently being recorded. Please wait for recording to finish and convert to MP4.' });
+  }
+
   // Extract username from filename for folder structure
   const match = filename.match(/TK_([^_]+)_/);
   const username = match ? match[1] : 'unknown';
   
-  const remotePath = `drive:root/pop4u/tiktok-live-recorder/${username}/${filename}`;
+  const remotePath = `drive:pop4u/tiktok-live-recorder/${username}/${filename}`;
 
   // Add to upload queue
   uploadQueue.set(filename, {
@@ -265,17 +270,20 @@ router.post('/upload-all', async (req, res) => {
     const files = await fs.readdir(recordingsDir);
     
     // Only get MP4 files (not FLV files that are still being processed)
+    // Also exclude _flv.mp4 files that are currently being recorded
     const mp4Files = files.filter(file => 
       file.endsWith('.mp4') && 
       file.startsWith('TK_') &&
+      !file.includes('_flv.mp4') && // Exclude files currently being recorded
       !uploadQueue.has(file) && 
       !uploadHistory.has(file)
     );
 
     if (mp4Files.length === 0) {
+      const flvFiles = files.filter(f => f.endsWith('.flv') || f.includes('_flv.mp4'));
       return res.json({ 
-        message: 'No MP4 files available for upload. FLV files need to be converted first.',
-        flvFiles: files.filter(f => f.endsWith('.flv')).length
+        message: 'No completed MP4 files available for upload. FLV files need to be converted first.',
+        flvFiles: flvFiles.length
       });
     }
 
@@ -284,7 +292,7 @@ router.post('/upload-all', async (req, res) => {
       const filePath = path.join(recordingsDir, filename);
       const match = filename.match(/TK_([^_]+)_/);
       const username = match ? match[1] : 'unknown';
-      const remotePath = `drive:root/pop4u/tiktok-live-recorder/${username}/${filename}`;
+      const remotePath = `drive:pop4u/tiktok-live-recorder/${username}/${filename}`;
 
       uploadQueue.set(filename, {
         status: 'uploading',
@@ -303,7 +311,7 @@ router.post('/upload-all', async (req, res) => {
     res.json({ 
       message: `Started uploading ${uploads.length} MP4 files`,
       uploads,
-      skippedFlvFiles: files.filter(f => f.endsWith('.flv')).length
+      skippedFlvFiles: files.filter(f => f.endsWith('.flv') || f.includes('_flv.mp4')).length
     });
   } catch (error) {
     console.error('Upload all error:', error);
