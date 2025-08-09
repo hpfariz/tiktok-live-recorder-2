@@ -35,26 +35,9 @@ try {
   const filesRoutes = require('./routes/files');
   const uploadsRoutes = require('./routes/uploads');
   
-  // Add logging middleware for API routes
-  app.use('/api', (req, res, next) => {
-    console.log(`🔍 API Request: ${req.method} ${req.originalUrl}`);
-    next();
-  });
-  
   app.use('/api/recorder', recorderRoutes);
   app.use('/api/files', filesRoutes);
   app.use('/api/uploads', uploadsRoutes);
-  
-  console.log('✅ API routes loaded successfully');
-  
-  // Test that routes are working
-  setTimeout(() => {
-    console.log('🧪 Testing API routes...');
-    console.log('Available routes:');
-    console.log('- GET /api/recorder/monitored');
-    console.log('- GET /api/files');
-    console.log('- GET /api/uploads');
-  }, 1000);
   
 } catch (error) {
   console.error('❌ Error loading routes:', error);
@@ -112,5 +95,4 @@ process.on('SIGINT', () => {
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 TikTok Live Recorder Web running on port ${PORT}`);
   console.log(`📁 Recordings directory: ${recordingsDir}`);
-  console.log(`🌐 Health check: http://localhost:${PORT}/health`);
 });
