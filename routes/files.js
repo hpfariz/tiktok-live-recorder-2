@@ -244,6 +244,66 @@ router.get('/active-recordings', (req, res) => {
   });
 });
 
+// Debug endpoint to see what's happening with file tracking
+router.get('/debug/status', (req, res) => {
+  res.json({
+    activeRecordings: Array.from(activeRecordings),
+    recordingsCount: activeRecordings.size,
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Endpoint to get file operations log
+router.get('/debug/operations', (req, res) => {
+  res.json({
+    operations: fileOperationsLog.slice(-50), // Last 50 operations
+    total: fileOperationsLog.length
+  });
+});
+
+// Force mark a file as finished (for manual intervention)
+router.post('/debug/force-finish/:filename', (req, res) => {
+  const { filename } = req.params;
+  activeRecordings.delete(filename);
+  logFileOperation('FORCE_FINISHED', filename, 'Manually marked as finished');
+  res.json({ success: true, message: `${filename} force marked as finished` });
+});
+
+// Clear all stuck recordings - useful when files are stuck in "recording" state
+router.post('/debug/clear-stuck', async (req, res) => {
+  try {
+    const recordingsPath = path.join(__dirname, '../recordings');
+    const files = await fs.readdir(recordingsPath);
+    
+    let clearedCount = 0;
+    
+    // Check each file that might be stuck
+    for (const filename of files) {
+      if (filename.endsWith('.mp4')) {
+        const filePath = path.join(recordingsPath, filename);
+        const stats = await fs.stat(filePath);
+        const fileAge = Date.now() - stats.mtime.getTime();
+        
+        // If file hasn't been modified in 2+ minutes, clear it from active recordings
+        if (fileAge > 120000 && activeRecordings.has(filename)) {
+          activeRecordings.delete(filename);
+          logFileOperation('CLEAR_STUCK', filename, `File age: ${Math.round(fileAge/1000)}s`);
+          clearedCount++;
+        }
+      }
+    }
+    
+    res.json({ 
+      success: true, 
+      message: `Cleared ${clearedCount} stuck recordings`,
+      clearedCount 
+    });
+  } catch (error) {
+    console.error('Error clearing stuck recordings:', error);
+    res.status(500).json({ error: 'Failed to clear stuck recordings' });
+  }
+});
+
 // Helper function to format file size
 function formatFileSize(bytes) {
   if (bytes === 0) return '0 Bytes';
