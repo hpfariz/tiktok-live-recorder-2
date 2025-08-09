@@ -142,6 +142,7 @@ async function scheduleAutoUploadAfterConversion(username, originalFilename) {
   
   let conversionCheckInterval;
   let conversionTimeout;
+  let fallbackTimer;
   
   // Check every 10 seconds for conversion completion
   conversionCheckInterval = setInterval(async () => {
@@ -150,6 +151,7 @@ async function scheduleAutoUploadAfterConversion(username, originalFilename) {
         // MP4 file exists, conversion is complete
         clearInterval(conversionCheckInterval);
         clearTimeout(conversionTimeout);
+        clearTimeout(fallbackTimer);
         
         console.log(`✅ Conversion completed for @${username}: ${expectedMp4File}`);
         
@@ -171,8 +173,36 @@ async function scheduleAutoUploadAfterConversion(username, originalFilename) {
   // Set a timeout to stop checking after 10 minutes
   conversionTimeout = setTimeout(() => {
     clearInterval(conversionCheckInterval);
+    clearTimeout(fallbackTimer);
     console.log(`⚠️ Conversion timeout for @${username} - stopping auto-upload scheduling`);
   }, 10 * 60 * 1000); // 10 minutes timeout
+  
+  // Add a fallback timer that triggers after 8 minutes regardless
+  // This handles cases where the file already exists but wasn't detected
+  fallbackTimer = setTimeout(async () => {
+    try {
+      if (await fs.pathExists(mp4FilePath)) {
+        clearInterval(conversionCheckInterval);
+        clearTimeout(conversionTimeout);
+        
+        console.log(`🔄 Fallback: Found converted file for @${username}: ${expectedMp4File}`);
+        
+        // Schedule auto-upload for 2 more minutes (total 10 minutes from recording end)
+        const autoUploadTimer = setTimeout(() => {
+          console.log(`⏰ Auto-upload timer triggered for @${username} (fallback method)`);
+          startAutoUpload(username);
+          autoUploadTimers.delete(username);
+        }, 2 * 60 * 1000); // 2 more minutes
+        
+        autoUploadTimers.set(username, autoUploadTimer);
+        console.log(`⏰ Auto-upload scheduled for @${username} in 2 minutes (fallback)`);
+      } else {
+        console.log(`⚠️ Fallback: No converted file found for @${username} after 8 minutes`);
+      }
+    } catch (error) {
+      console.error(`❌ Error in fallback check for @${username}:`, error.message);
+    }
+  }, 8 * 60 * 1000); // 8 minutes fallback
 }
 
 // Test endpoint
