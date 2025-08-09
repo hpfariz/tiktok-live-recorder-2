@@ -9,6 +9,21 @@ const router = express.Router();
 let activeRecordings = new Map(); // username -> recording info
 let monitoredUsers = new Map(); // username -> user info
 
+// Helper function to notify files API about recording status
+async function notifyFileStatus(filename, isRecording) {
+  try {
+    const method = isRecording ? 'mark-recording' : 'mark-finished';
+    const response = await fetch(`http://localhost:${process.env.PORT || 10000}/api/files/${method}/${filename}`, {
+      method: 'POST'
+    });
+    if (!response.ok) {
+      console.log(`Failed to notify file status for ${filename}: ${response.statusText}`);
+    }
+  } catch (error) {
+    console.log(`Error notifying file status for ${filename}:`, error.message);
+  }
+}
+
 // Test endpoint
 router.get('/test', (req, res) => {
   res.json({ message: 'Recorder API is working', timestamp: new Date().toISOString() });
@@ -68,6 +83,11 @@ router.delete('/monitor/:username', (req, res) => {
       
       // Mark as stopping
       recording.status = 'stopping';
+      
+      // Notify that recording is finishing
+      if (recording.filename) {
+        notifyFileStatus(recording.filename, false);
+      }
       
       // Wait a bit for graceful shutdown, then force kill if needed
       setTimeout(() => {
@@ -174,16 +194,43 @@ function startMonitoring(username, interval) {
       // Check if recording started
       if (log.includes('Started recording')) {
         recording.status = 'recording';
-        const match = log.match(/TK_([^_]+)_([^_]+)_/);
-        if (match) {
-          recording.filename = `TK_${match[1]}_${match[2]}_flv.mp4`;
+        
+        // Extract filename from log - it should be the actual MP4 filename
+        const filenameMatch = log.match(/TK_[^_]+_[^_]+_[^.]+\.mp4/);
+        if (filenameMatch) {
+          recording.filename = filenameMatch[0];
+          console.log(`Recording started: ${recording.filename}`);
+          
+          // Notify files API that recording started
+          notifyFileStatus(recording.filename, true);
         }
       }
       
       // Check if recording finished
       if (log.includes('Recording finished')) {
+        if (recording.filename) {
+          console.log(`Recording finished: ${recording.filename}`);
+          
+          // Notify files API that recording finished
+          notifyFileStatus(recording.filename, false);
+        }
+        
         recording.status = 'monitoring';
         recording.filename = null;
+      }
+      
+      // Check for conversion messages (but files are already MP4)
+      if (log.includes('already in MP4 format') || log.includes('skipping conversion')) {
+        console.log(`File already in MP4 format, no conversion needed`);
+      }
+      
+      // Check for actual conversion completion (if it happens)
+      if (log.includes('Finished converting')) {
+        const convertedMatch = log.match(/Finished converting (.*)/);
+        if (convertedMatch) {
+          const convertedFile = path.basename(convertedMatch[1]);
+          console.log(`Conversion completed for: ${convertedFile}`);
+        }
       }
       
       // Keep only last 50 logs
@@ -215,6 +262,11 @@ function startMonitoring(username, interval) {
     
     const recording = activeRecordings.get(username);
     if (recording) {
+      // Notify that any active recording is finished
+      if (recording.filename) {
+        notifyFileStatus(recording.filename, false);
+      }
+      
       recording.status = 'stopped';
       recording.exitCode = code;
       
@@ -240,6 +292,11 @@ function startMonitoring(username, interval) {
     
     const recording = activeRecordings.get(username);
     if (recording) {
+      // Notify that recording failed
+      if (recording.filename) {
+        notifyFileStatus(recording.filename, false);
+      }
+      
       recording.error = error.message;
       recording.status = 'error';
     }
