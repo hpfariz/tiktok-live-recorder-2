@@ -54,19 +54,30 @@ router.post('/monitor', (req, res) => {
 router.delete('/monitor/:username', (req, res) => {
   const { username } = req.params;
   
-  // Stop any active recording
+  // Stop any active recording gracefully
   if (activeRecordings.has(username)) {
     const recording = activeRecordings.get(username);
     if (recording.process && !recording.process.killed) {
+      // Send SIGTERM for graceful shutdown, allowing post-processing
       recording.process.kill('SIGTERM');
+      
+      // Mark as stopping
+      recording.status = 'stopping';
+      
+      // Wait a bit for graceful shutdown, then force kill if needed
+      setTimeout(() => {
+        if (recording.process && !recording.process.killed) {
+          console.log(`[${username}] Force killing process after graceful shutdown timeout`);
+          recording.process.kill('SIGKILL');
+        }
+      }, 30000); // 30 seconds for post-processing
     }
-    activeRecordings.delete(username);
   }
 
   // Remove from monitoring
   if (monitoredUsers.has(username)) {
     monitoredUsers.delete(username);
-    res.json({ message: `Stopped monitoring @${username}` });
+    res.json({ message: `Stopped monitoring @${username} (allowing current recording to finish)` });
   } else {
     res.status(404).json({ error: 'User not found in monitoring list' });
   }
