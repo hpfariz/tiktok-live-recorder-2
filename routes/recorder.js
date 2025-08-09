@@ -409,33 +409,22 @@ function startMonitoring(username, interval) {
       if (log.includes('Finished converting')) {
         console.log(`✅ Conversion process completed for @${username}`);
         
-        // If we have a filename and it was an FLV file, start auto-upload immediately
-        if (recording.filename && recording.filename.includes('_flv.mp4')) {
-          const mp4Filename = recording.filename.replace('_flv.mp4', '.mp4');
-          console.log(`🔄 Conversion completed: ${recording.filename} -> ${mp4Filename}`);
-          console.log(`🚀 Starting immediate auto-upload for @${username}`);
-          
-          // Start auto-upload immediately instead of waiting 5 minutes
-          setTimeout(() => {
-            console.log(`⏰ Auto-upload starting now for @${username}`);
-            startAutoUpload(username);
-          }, 10000); // Wait just 10 seconds to ensure file is fully written
-        }
+        // Start auto-upload immediately instead of waiting 5 minutes
+        setTimeout(() => {
+          console.log(`⏰ Auto-upload starting now for @${username}`);
+          startAutoUpload(username);
+        }, 10000); // Wait just 10 seconds to ensure file is fully written
       }
       
       // Also check for "already in MP4 format" message
       if (log.includes('already in MP4 format') || log.includes('skipping conversion')) {
         console.log(`✅ File already in MP4 format, starting immediate auto-upload for @${username}`);
         
-        if (recording.filename) {
-          console.log(`🚀 Starting immediate auto-upload for @${username} (no conversion needed)`);
-          
-          // Start auto-upload immediately instead of waiting 5 minutes
-          setTimeout(() => {
-            console.log(`⏰ Auto-upload starting now for @${username}`);
-            startAutoUpload(username);
-          }, 10000); // Wait just 10 seconds to ensure file is fully written
-        }
+        // Start auto-upload immediately instead of waiting 5 minutes
+        setTimeout(() => {
+          console.log(`⏰ Auto-upload starting now for @${username}`);
+          startAutoUpload(username);
+        }, 10000); // Wait just 10 seconds to ensure file is fully written
       }
       
       // Keep only last 50 logs
@@ -464,33 +453,22 @@ function startMonitoring(username, interval) {
       if (log.includes('Finished converting')) {
         console.log(`✅ Conversion process completed for @${username} (from stderr)`);
         
-        // If we have a filename and it was an FLV file, start auto-upload immediately
-        if (recording.filename && recording.filename.includes('_flv.mp4')) {
-          const mp4Filename = recording.filename.replace('_flv.mp4', '.mp4');
-          console.log(`🔄 Conversion completed: ${recording.filename} -> ${mp4Filename}`);
-          console.log(`🚀 Starting immediate auto-upload for @${username}`);
-          
-          // Start auto-upload immediately instead of waiting 5 minutes
-          setTimeout(() => {
-            console.log(`⏰ Auto-upload starting now for @${username}`);
-            startAutoUpload(username);
-          }, 10000); // Wait just 10 seconds to ensure file is fully written
-        }
+        // Start auto-upload immediately instead of waiting 5 minutes
+        setTimeout(() => {
+          console.log(`⏰ Auto-upload starting now for @${username}`);
+          startAutoUpload(username);
+        }, 10000); // Wait just 10 seconds to ensure file is fully written
       }
       
       // Also check for "already in MP4 format" message in stderr
       if (log.includes('already in MP4 format') || log.includes('skipping conversion')) {
         console.log(`✅ File already in MP4 format, starting immediate auto-upload for @${username} (from stderr)`);
         
-        if (recording.filename) {
-          console.log(`🚀 Starting immediate auto-upload for @${username} (no conversion needed)`);
-          
-          // Start auto-upload immediately instead of waiting 5 minutes
-          setTimeout(() => {
-            console.log(`⏰ Auto-upload starting now for @${username}`);
-            startAutoUpload(username);
-          }, 10000); // Wait just 10 seconds to ensure file is fully written
-        }
+        // Start auto-upload immediately instead of waiting 5 minutes
+        setTimeout(() => {
+          console.log(`⏰ Auto-upload starting now for @${username}`);
+          startAutoUpload(username);
+        }, 10000); // Wait just 10 seconds to ensure file is fully written
       }
     }
   });
