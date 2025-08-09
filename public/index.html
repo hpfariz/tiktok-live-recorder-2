@@ -473,11 +473,23 @@
         // Dashboard functions
         async function loadDashboard() {
             try {
+                // Test API connectivity first
+                const healthResponse = await fetch(`${API_BASE}/health`);
+                if (!healthResponse.ok) {
+                    throw new Error('API server not responding');
+                }
+
                 const [usersRes, filesRes, uploadsRes] = await Promise.all([
                     fetch(`${API_BASE}/api/recorder/monitored`),
                     fetch(`${API_BASE}/api/files`),
                     fetch(`${API_BASE}/api/uploads`)
                 ]);
+
+                // Check if responses are JSON
+                const contentType = usersRes.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) {
+                    throw new Error('API returned non-JSON response');
+                }
 
                 const users = await usersRes.json();
                 const files = await filesRes.json();
@@ -493,6 +505,25 @@
                 displayMonitoredUsers(users);
             } catch (error) {
                 console.error('Error loading dashboard:', error);
+                
+                // Show error message to user
+                const container = document.getElementById('monitored-users');
+                container.innerHTML = `
+                    <div class="empty-state" style="color: #d32f2f;">
+                        <h3>⚠️ API Connection Error</h3>
+                        <p>Cannot connect to the backend API.</p>
+                        <p>Error: ${error.message}</p>
+                        <button onclick="loadDashboard()" class="btn btn-primary btn-small" style="margin-top: 15px;">
+                            🔄 Retry
+                        </button>
+                    </div>
+                `;
+                
+                // Reset stats to 0
+                document.getElementById('stat-monitored').textContent = '?';
+                document.getElementById('stat-recording').textContent = '?';
+                document.getElementById('stat-files').textContent = '?';
+                document.getElementById('stat-uploading').textContent = '?';
             }
         }
 
