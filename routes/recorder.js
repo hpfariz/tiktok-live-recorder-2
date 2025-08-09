@@ -9,6 +9,11 @@ const router = express.Router();
 let activeRecordings = new Map(); // username -> recording info
 let monitoredUsers = new Map(); // username -> user info
 
+// Test endpoint
+router.get('/test', (req, res) => {
+  res.json({ message: 'Recorder API is working', timestamp: new Date().toISOString() });
+});
+
 // Get all monitored users
 router.get('/monitored', (req, res) => {
   const users = Array.from(monitoredUsers.entries()).map(([username, info]) => ({
