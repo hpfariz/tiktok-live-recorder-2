@@ -1,24 +1,14 @@
 # Use Node.js as base image since we need both Node and Python
 FROM node:18-bullseye
 
-# Install system dependencies and newer FFmpeg
+# Install system dependencies in a single layer
 RUN apt-get update && apt-get install -y \
     python3 \
     python3-pip \
+    ffmpeg \
     curl \
-    wget \
-    xz-utils \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
-
-# Install newer FFmpeg from static builds (more reliable than package manager)
-RUN wget -O ffmpeg.tar.xz "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz" \
-    && tar -xf ffmpeg.tar.xz \
-    && mv ffmpeg-*-amd64-static/ffmpeg /usr/local/bin/ \
-    && mv ffmpeg-*-amd64-static/ffprobe /usr/local/bin/ \
-    && chmod +x /usr/local/bin/ffmpeg /usr/local/bin/ffprobe \
-    && rm -rf ffmpeg* \
-    && ffmpeg -version
 
 # Install rclone
 RUN curl https://rclone.org/install.sh | bash
