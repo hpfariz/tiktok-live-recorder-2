@@ -25,23 +25,47 @@ class VideoManagement:
     @staticmethod
     def convert_flv_to_mp4(file):
         """
-        Convert the video from flv format to mp4 format
+        Convert the video from flv format to mp4 format.
+        Only converts if the file is actually FLV format.
         """
+        # Check if file actually needs conversion
+        if not file.endswith('_flv.mp4'):
+            logger.info(f"File {file} is already in MP4 format, skipping conversion")
+            return
+            
+        # Check if the file is actually FLV format (not just named with _flv)
+        if file.endswith('.mp4'):
+            logger.info(f"File {file} is already MP4 format, skipping conversion")
+            return
+
         logger.info("Converting {} to MP4 format...".format(file))
 
         if not VideoManagement.wait_for_file_release(file):
             logger.error(f"File {file} is still locked after waiting. Skipping conversion.")
             return
 
+        # Check if output file already exists
+        output_file = file.replace('_flv.mp4', '.mp4')
+        if os.path.exists(output_file):
+            logger.info(f"Output file {output_file} already exists, skipping conversion")
+            os.remove(file)  # Remove the source file
+            return
+
         try:
             ffmpeg.input(file).output(
-                file.replace('_flv.mp4', '.mp4'),
+                output_file,
                 c='copy',
                 y='-y',
             ).run(quiet=True)
+            
+            # Only remove source file if conversion was successful
+            if os.path.exists(output_file):
+                os.remove(file)
+                logger.info("Finished converting {}\n".format(file))
+            else:
+                logger.error(f"Conversion failed - output file {output_file} not created")
+                
         except ffmpeg.Error as e:
             logger.error(f"ffmpeg error: {e.stderr.decode() if hasattr(e, 'stderr') else str(e)}")
-
-        os.remove(file)
-
-        logger.info("Finished converting {}\n".format(file))
+        except Exception as e:
+            logger.error(f"Conversion error: {str(e)}")
