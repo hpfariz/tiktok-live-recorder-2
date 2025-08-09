@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: tiktok-live-recorder
+    env: node
+    plan: free
+    buildCommand: |
+      # Install Python dependencies
+      cd src && pip install -r requirements.txt
+      # Install backend dependencies
+      cd ../backend && npm install
+      # Install frontend dependencies and build
+      cd ../frontend && npm install && npm run build
+    startCommand: cd backend && npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        fromService:
+          type: web
+          name: tiktok-live-recorder
+          property: port

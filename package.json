@@ -1,0 +1,25 @@
+{
+  "name": "tiktok-live-recorder-app",
+  "version": "1.0.0",
+  "description": "TikTok Live Recorder with Web Interface",
+  "main": "backend/server.js",
+  "scripts": {
+    "start": "cd backend && npm start",
+    "build": "cd frontend && npm install && npm run build && cd ../backend && npm install",
+    "dev:frontend": "cd frontend && npm start",
+    "dev:backend": "cd backend && npm run dev",
+    "install:all": "cd backend && npm install && cd ../frontend && npm install"
+  },
+  "engines": {
+    "node": ">=14.0.0",
+    "python": ">=3.8.0"
+  },
+  "keywords": [
+    "tiktok",
+    "live",
+    "recorder",
+    "streaming"
+  ],
+  "author": "Your Name",
+  "license": "MIT"
+}
