@@ -138,13 +138,20 @@ router.get('/test', (req, res) => {
 
 // Get all monitored users
 router.get('/monitored', (req, res) => {
-  const users = Array.from(monitoredUsers.entries()).map(([username, info]) => ({
-    username,
-    ...info,
-    isRecording: activeRecordings.has(username) && activeRecordings.get(username).status === 'recording',
-    hasAutoUploadScheduled: autoUploadTimers.has(username)
-  }));
-  res.json(users);
+  try {
+    const users = Array.from(monitoredUsers.entries()).map(([username, info]) => ({
+      username,
+      ...info,
+      isRecording: activeRecordings.has(username) && activeRecordings.get(username).status === 'recording',
+      hasAutoUploadScheduled: autoUploadTimers.has(username)
+    }));
+    
+    console.log(`📊 Returning ${users.length} monitored users`);
+    res.json(users);
+  } catch (error) {
+    console.error('Error in /monitored endpoint:', error);
+    res.status(500).json({ error: 'Failed to get monitored users', details: error.message });
+  }
 });
 
 // Add user to monitoring list
