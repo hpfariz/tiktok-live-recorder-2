@@ -361,6 +361,21 @@ router.delete('/history', (req, res) => {
 
 // Test rclone configuration
 router.get('/test-config', (req, res) => {
+  console.log('🧪 Testing rclone configuration...');
+  
+  // First try to setup config
+  const setupResult = setupRclone();
+  console.log('Setup result:', setupResult);
+  
+  if (!setupResult) {
+    return res.status(500).json({ 
+      success: false, 
+      message: 'Failed to setup rclone config',
+      error: 'Check server logs for details'
+    });
+  }
+
+  // Test rclone command
   const rcloneProcess = spawn('rclone', ['lsd', 'drive:'], {
     stdio: ['pipe', 'pipe', 'pipe']
   });
