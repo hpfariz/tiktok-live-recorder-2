@@ -473,6 +473,74 @@
             }
         }
 
+        // Debug functions
+        async function debugFileStatus(username) {
+            try {
+                const response = await fetch(`${API_BASE}/api/recorder/debug/file-status/${username}`);
+                const data = await response.json();
+                
+                let message = `Debug info for @${username}:\n\n`;
+                message += `Total files: ${data.totalFiles}\n`;
+                message += `Has auto-upload scheduled: ${data.hasAutoUploadScheduled}\n`;
+                message += `Active recording: ${data.activeRecording ? JSON.stringify(data.activeRecording) : 'None'}\n\n`;
+                
+                message += `Files:\n`;
+                data.files.forEach(file => {
+                    message += `- ${file.filename} (${file.sizeFormatted})\n`;
+                    message += `  Type: ${file.isFlv ? 'FLV' : file.isMp4 ? 'MP4' : 'Other'}\n`;
+                    message += `  Modified: ${new Date(file.modified).toLocaleString()}\n\n`;
+                });
+                
+                alert(message);
+            } catch (error) {
+                alert('Failed to get debug info: ' + error.message);
+            }
+        }
+
+        async function triggerAutoUpload(username) {
+            if (!confirm(`Manually trigger auto-upload for @${username}?`)) return;
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/recorder/debug/trigger-auto-upload/${username}`, {
+                    method: 'POST'
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    alert(`✅ ${data.message}`);
+                    loadDashboard();
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            } catch (error) {
+                alert('Failed to trigger auto-upload: ' + error.message);
+            }
+        }
+
+        async function debugUploadFiles(username) {
+            try {
+                const response = await fetch(`${API_BASE}/api/uploads/debug/files/${username}`);
+                const data = await response.json();
+                
+                let message = `Upload debug for @${username}:\n\n`;
+                message += `Total files: ${data.totalFiles}\n`;
+                message += `In upload queue: ${data.uploadQueue.length}\n`;
+                message += `In upload history: ${data.uploadHistory.length}\n\n`;
+                
+                message += `Files eligible for upload:\n`;
+                data.files.forEach(file => {
+                    message += `- ${file.filename} (${file.sizeFormatted})\n`;
+                    message += `  MP4: ${file.isMp4}, FLV: ${file.isFlv}\n`;
+                    message += `  In queue: ${file.inUploadQueue}, In history: ${file.inUploadHistory}\n\n`;
+                });
+                
+                alert(message);
+            } catch (error) {
+                alert('Failed to get upload debug info: ' + error.message);
+            }
+        }
+
         // Dashboard functions
         async function loadDashboard() {
             try {
@@ -560,6 +628,12 @@
                         </button>
                         <button onclick="viewLogs('${user.username}')" class="btn btn-primary btn-small">
                             View Logs
+                        </button>
+                        <button onclick="debugFileStatus('${user.username}')" class="btn btn-warning btn-small">
+                            🔍 Debug Files
+                        </button>
+                        <button onclick="triggerAutoUpload('${user.username}')" class="btn btn-success btn-small">
+                            🚀 Trigger Upload
                         </button>
                         ${user.hasAutoUploadScheduled ? `
                             <button onclick="cancelAutoUpload('${user.username}')" class="btn btn-warning btn-small">
