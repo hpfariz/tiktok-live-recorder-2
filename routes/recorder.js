@@ -398,9 +398,8 @@ function startMonitoring(username, interval) {
           console.log(`🚫 Cancelled previous auto-upload timer for @${username} (new recording started)`);
         }
         
-        // Extract filename from log - look for the MP4 filename pattern
-        const filenameMatch = log.match(/TK_[^_]+_[^_]+_[^.]+\.mp4/) || 
-                             recording.logs.find(l => l.message.match(/TK_[^_]+_[^_]+_[^.]+\.mp4/))?.message.match(/TK_[^_]+_[^_]+_[^.]+\.mp4/);
+        // Extract filename from log - look for the FLV filename pattern
+        const filenameMatch = log.match(/TK_[^_]+_[^_]+_[^.]+_flv\.mp4/);
         
         if (filenameMatch) {
           recording.filename = filenameMatch[0];
@@ -410,7 +409,11 @@ function startMonitoring(username, interval) {
           notifyFileStatus(recording.filename, true);
         } else {
           // If we can't find the filename in the log, generate expected filename
-          const timestamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+/, '').replace('T', '_').slice(0, 15);
+          const timestamp = new Date().toISOString()
+            .replace(/[-:]/g, '')
+            .replace(/\..+/, '')
+            .replace('T', '_')
+            .slice(0, 15);
           const expectedFilename = `TK_${username}_${timestamp}_flv.mp4`;
           recording.filename = expectedFilename;
           console.log(`📁 Generated filename: ${recording.filename}`);
@@ -480,11 +483,6 @@ function startMonitoring(username, interval) {
       
       recording.status = 'stopped';
       recording.exitCode = code;
-      
-      // Check for converted MP4 files
-      setTimeout(() => {
-        checkForCompletedRecordings(username);
-      }, 5000); // Wait 5 seconds for any final file operations
     }
     
     // If user is still monitored and process wasn't manually stopped, restart
