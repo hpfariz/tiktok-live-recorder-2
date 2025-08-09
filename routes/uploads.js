@@ -140,29 +140,46 @@ router.post('/auto-upload/:username', async (req, res) => {
   const recordingsDir = path.join(__dirname, '../recordings');
   
   try {
+    console.log(`🔍 Checking for files to auto-upload for @${username}`);
+    
     const files = await fs.readdir(recordingsDir);
+    console.log(`📁 Found ${files.length} total files in recordings directory`);
     
     // Find MP4 files for this user that haven't been uploaded yet
-    const userMp4Files = files.filter(file => 
-      file.includes(`TK_${username}_`) && 
-      file.endsWith('.mp4') && 
-      !file.includes('_flv.') &&
-      !uploadQueue.has(file) && 
-      !uploadHistory.has(file)
-    );
+    // Look for both .mp4 files (converted) and exclude _flv.mp4 files (being recorded)
+    const userMp4Files = files.filter(file => {
+      const isForUser = file.includes(`TK_${username}_`);
+      const isMp4 = file.endsWith('.mp4');
+      const isNotFlv = !file.includes('_flv.mp4'); // Exclude files currently being recorded
+      const notInQueue = !uploadQueue.has(file);
+      const notInHistory = !uploadHistory.has(file);
+      
+      console.log(`📄 Checking file: ${file}`);
+      console.log(`  - For user: ${isForUser}`);
+      console.log(`  - Is MP4: ${isMp4}`);
+      console.log(`  - Not FLV: ${isNotFlv}`);
+      console.log(`  - Not in queue: ${notInQueue}`);
+      console.log(`  - Not in history: ${notInHistory}`);
+      
+      return isForUser && isMp4 && isNotFlv && notInQueue && notInHistory;
+    });
+
+    console.log(`✅ Found ${userMp4Files.length} files eligible for auto-upload: ${userMp4Files.join(', ')}`);
 
     if (userMp4Files.length === 0) {
       return res.json({ 
-        message: `No new files found for @${username} to auto-upload`,
+        message: `No new MP4 files found for @${username} to auto-upload`,
         username,
-        filesFound: 0
+        filesFound: 0,
+        totalFiles: files.length,
+        allFiles: files.filter(f => f.includes(`TK_${username}_`))
       });
     }
 
     // Start uploads for all new MP4 files for this user
     const uploads = userMp4Files.map(filename => {
       const filePath = path.join(recordingsDir, filename);
-      const remotePath = `drive:root/pop4u/tiktok-live-recorder/${username}/${filename}`;
+      const remotePath = `drive:pop4u/tiktok-live-recorder/${username}/${filename}`;
 
       uploadQueue.set(filename, {
         status: 'uploading',
@@ -173,6 +190,7 @@ router.post('/auto-upload/:username', async (req, res) => {
         isAutoUpload: true // Flag to identify auto-uploads
       });
 
+      console.log(`🚀 Starting auto-upload: ${filename} -> ${remotePath}`);
       startUpload(filename, filePath, remotePath);
       
       return { filename, remotePath };
@@ -188,7 +206,7 @@ router.post('/auto-upload/:username', async (req, res) => {
     });
   } catch (error) {
     console.error(`Auto-upload error for @${username}:`, error);
-    res.status(500).json({ error: `Failed to start auto-upload for @${username}` });
+    res.status(500).json({ error: `Failed to start auto-upload for @${username}: ${error.message}` });
   }
 });
 
