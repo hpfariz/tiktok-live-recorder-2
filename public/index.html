@@ -651,36 +651,70 @@
                 return;
             }
 
-            container.innerHTML = files.map(file => `
-                <div class="file-item ${file.isCurrentlyRecording ? 'recording' : ''}">
-                    <div class="item-header">
-                        <div class="item-title">${file.filename}</div>
-                        <span class="status-badge status-${file.isCurrentlyRecording ? 'recording' : 'completed'}">
-                            ${file.isCurrentlyRecording ? 'Recording' : 'Completed'}
-                        </span>
+            container.innerHTML = files.map(file => {
+                // Determine the actual recording status
+                let isRecording = file.isCurrentlyRecording;
+                let statusText = 'Completed';
+                let statusClass = 'completed';
+                
+                if (isRecording) {
+                    if (file.filename.includes('_flv.')) {
+                        statusText = 'Recording';
+                        statusClass = 'recording';
+                    } else {
+                        statusText = 'Converting';
+                        statusClass = 'recording';
+                    }
+                }
+                
+                // Don't show certain actions for files that are being processed
+                const canDownload = !isRecording;
+                const canUpload = !isRecording && file.filename.endsWith('.mp4') && !file.filename.includes('_flv.');
+                const canDelete = !isRecording;
+                
+                return `
+                    <div class="file-item ${isRecording ? 'recording' : ''}">
+                        <div class="item-header">
+                            <div class="item-title">${file.filename}</div>
+                            <span class="status-badge status-${statusClass}">
+                                ${statusText}
+                            </span>
+                        </div>
+                        <div class="item-details">
+                            <div><strong>User:</strong> @${file.username}</div>
+                            <div><strong>Size:</strong> ${file.sizeFormatted}</div>
+                            <div><strong>Created:</strong> ${new Date(file.createdAt).toLocaleString()}</div>
+                            <div><strong>Modified:</strong> ${new Date(file.modifiedAt).toLocaleString()}</div>
+                            ${file.filename.includes('_flv.') ? 
+                                '<div style="color: #f57c00;"><strong>Note:</strong> FLV source file (will be converted to MP4)</div>' : 
+                                ''
+                            }
+                        </div>
+                        <div class="item-actions">
+                            ${canDownload ? `
+                                <button onclick="downloadFile('${file.filename}')" class="btn btn-primary btn-small">
+                                    📥 Download
+                                </button>
+                            ` : ''}
+                            ${canUpload ? `
+                                <button onclick="uploadFile('${file.filename}')" class="btn btn-success btn-small">
+                                    ☁️ Upload
+                                </button>
+                            ` : ''}
+                            ${canDelete ? `
+                                <button onclick="deleteFile('${file.filename}')" class="btn btn-danger btn-small">
+                                    🗑️ Delete
+                                </button>
+                            ` : ''}
+                            ${isRecording ? `
+                                <span style="color: #ff6b6b; font-style: italic;">
+                                    ${file.filename.includes('_flv.') ? 'Currently recording...' : 'Converting to MP4...'}
+                                </span>
+                            ` : ''}
+                        </div>
                     </div>
-                    <div class="item-details">
-                        <div><strong>User:</strong> @${file.username}</div>
-                        <div><strong>Size:</strong> ${file.sizeFormatted}</div>
-                        <div><strong>Created:</strong> ${new Date(file.createdAt).toLocaleString()}</div>
-                    </div>
-                    <div class="item-actions">
-                        ${!file.isCurrentlyRecording ? `
-                            <button onclick="downloadFile('${file.filename}')" class="btn btn-primary btn-small">
-                                📥 Download
-                            </button>
-                            <button onclick="uploadFile('${file.filename}')" class="btn btn-success btn-small">
-                                ☁️ Upload
-                            </button>
-                            <button onclick="deleteFile('${file.filename}')" class="btn btn-danger btn-small">
-                                🗑️ Delete
-                            </button>
-                        ` : `
-                            <span style="color: #ff6b6b; font-style: italic;">Currently recording...</span>
-                        `}
-                    </div>
-                </div>
-            `).join('');
+                `;
+            }).join('');
         }
 
         async function refreshFiles() {
