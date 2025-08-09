@@ -41,6 +41,10 @@ app.get('/health', (req, res) => {
   });
 });
 
+app.get('/api/test', (req, res) => {
+  res.json({ message: 'API is working', routes: ['recorder', 'files', 'uploads'] });
+});
+
 // Catch-all for SPA (MUST be last)
 app.get('*', (req, res) => {
   const indexPath = path.join(__dirname, 'public', 'index.html');
@@ -61,8 +65,4 @@ app.listen(PORT, () => {
   console.log(`🚀 TikTok Live Recorder Web running on port ${PORT}`);
   console.log(`📁 Recordings directory: ${recordingsDir}`);
   console.log(`🌐 Health check: http://localhost:${PORT}/health`);
-});
-
-app.get('/api/test', (req, res) => {
-  res.json({ message: 'API is working', routes: ['recorder', 'files', 'uploads'] });
 });
