@@ -1,5 +1,6 @@
 import os
 import time
+import subprocess
 
 import ffmpeg
 
@@ -21,6 +22,26 @@ class VideoManagement:
             except PermissionError:
                 time.sleep(0.5)
         return False
+
+    @staticmethod
+    def check_ffmpeg_version():
+        """
+        Check FFmpeg version and return version info
+        """
+        try:
+            result = subprocess.run(['ffmpeg', '-version'], 
+                                  capture_output=True, text=True, timeout=10)
+            version_line = result.stdout.split('\n')[0]
+            # Extract version number
+            import re
+            version_match = re.search(r'ffmpeg version (\d+\.\d+)', version_line)
+            if version_match:
+                version = float(version_match.group(1))
+                return version, version_line
+            return None, version_line
+        except Exception as e:
+            logger.error(f"Could not check FFmpeg version: {e}")
+            return None, str(e)
 
     @staticmethod
     def convert_flv_to_mp4(file):
