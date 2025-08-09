@@ -4,7 +4,7 @@ const path = require('path');
 const fs = require('fs-extra');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
 
 // Middleware
 app.use(cors());
@@ -37,7 +37,8 @@ app.get('/health', (req, res) => {
   res.json({ 
     status: 'ok', 
     timestamp: new Date().toISOString(),
-    recordings: fs.existsSync(recordingsDir)
+    recordings: fs.existsSync(recordingsDir),
+    port: PORT
   });
 });
 
@@ -61,7 +62,18 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Something went wrong!', message: err.message });
 });
 
-app.listen(PORT, () => {
+// Graceful shutdown
+process.on('SIGTERM', () => {
+  console.log('SIGTERM received, shutting down gracefully');
+  process.exit(0);
+});
+
+process.on('SIGINT', () => {
+  console.log('SIGINT received, shutting down gracefully');
+  process.exit(0);
+});
+
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 TikTok Live Recorder Web running on port ${PORT}`);
   console.log(`📁 Recordings directory: ${recordingsDir}`);
   console.log(`🌐 Health check: http://localhost:${PORT}/health`);
