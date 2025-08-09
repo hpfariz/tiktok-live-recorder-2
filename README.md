@@ -1,135 +1,110 @@
-# TikTok Live Recorder - Web Interface
+# 🎥 TikTok Live Recorder
 
-A web-based interface for the TikTok Live Recorder that allows you to manage recordings through a browser.
+**Automatically record TikTok live streams with a simple web interface**
 
-## Features
+Never miss your favorite creators' live streams again! This tool automatically monitors TikTok users and records their live streams when they go live, then uploads them to your Google Drive.
 
-- **Web Interface**: Easy-to-use web dashboard
-- **Automatic Recording**: Set username and interval for automatic monitoring
-- **Real-time Status**: View active recordings and their status
-- **Start/Stop Control**: Start and stop recordings from the web interface
-- **No Update Check**: Automatically runs with `--no-update-check` flag
-- **Deploy Ready**: Configured for Render free tier deployment
+## ✨ What It Does
 
-## Project Structure
+- 📺 **Auto-monitoring**: Continuously checks if your favorite TikTok users are live
+- 🎬 **Auto-recording**: Starts recording immediately when someone goes live  
+- ☁️ **Auto-upload**: Automatically uploads recordings to your Google Drive
+- 🌐 **Web interface**: Easy-to-use dashboard to manage everything
+- 📱 **Multiple users**: Monitor as many TikTok users as you want
 
-```
-tiktok-live-recorder/
-├── backend/           # Node.js Express server
-├── frontend/          # React web interface
-├── src/              # Original Python recorder code
-├── package.json      # Root package.json
-├── render.yaml       # Render deployment config
-└── setup.sh          # Local setup script
-```
+## 🚀 Quick Start
 
-## Local Development Setup
+1. **Deploy to Render** (Free hosting)
+   - Click the deploy button below
+   - Wait for deployment to complete
+   - Open your app URL
 
-1. **Prerequisites**
-   - Node.js (v14 or higher)
-   - Python3 (v3.8 or higher)
-   - FFmpeg
+2. **Add TikTok users to monitor**
+   - Enter any TikTok username
+   - Set how often to check (recommended: 5 minutes)
+   - Click "Add User"
 
-2. **Quick Setup**
-   ```bash
-   chmod +x setup.sh
-   ./setup.sh
-   ```
+3. **Set up Google Drive** (Optional)
+   - Add your Google Drive credentials in Render dashboard
+   - Recordings will auto-upload after each stream
 
-3. **Manual Setup**
-   ```bash
-   # Install Python dependencies
-   cd src && pip3 install -r requirements.txt
+**That's it!** The app will automatically handle everything else.
 
-   # Install backend dependencies
-   cd ../backend && npm install
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy)
 
-   # Install frontend dependencies
-   cd ../frontend && npm install
-   ```
+## 📸 Screenshots
 
-4. **Development Mode**
-   ```bash
-   # Terminal 1: Start backend
-   cd backend && npm run dev
+### Dashboard - Monitor Your Favorite Creators
+*[Screenshot placeholder: Main dashboard showing monitored users]*
 
-   # Terminal 2: Start frontend
-   cd frontend && npm start
-   ```
+### Live Recording in Progress  
+*[Screenshot placeholder: Active recording status]*
 
-5. **Production Mode**
-   ```bash
-   # Build frontend
-   cd frontend && npm run build
+### Auto-Upload to Google Drive
+*[Screenshot placeholder: Upload progress and history]*
 
-   # Start production server
-   cd ../backend && npm start
-   ```
+## ⚠️ Important Notes
 
-## Deployment to Render
+### Geographic Restrictions
+Some countries require additional setup due to TikTok restrictions:
+- **Restricted**: Italy, Hong Kong, UK
+- **Working**: USA, Canada, Germany, Australia, and many others
 
-1. **Connect Repository**: Connect your GitHub repository to Render
+If you're in a restricted country, you may need to use a VPN or follow additional setup steps.
 
-2. **Configuration**: The `render.yaml` file is already configured for deployment
+### Legal & Responsible Use
+- **Personal use only** - Don't redistribute or sell recordings
+- **Respect creators** - Consider supporting creators through official channels
+- **Follow TikTok's terms** - Use responsibly and ethically
+- **Copyright awareness** - Recordings may contain copyrighted content
 
-3. **Environment Variables**: No additional environment variables needed
+## 🆘 Troubleshooting
 
-4. **Deploy**: Render will automatically build and deploy your application
+### "User not found" or "Can't access live"
+- Check if the username is correct (don't include @)
+- User might be in a private account
+- Try again later - sometimes TikTok has temporary restrictions
 
-## Configuration
+### Recordings not uploading to Google Drive
+- Check your Google Drive credentials in Render dashboard
+- Make sure you have enough storage space
+- Wait a few minutes - uploads can take time for large files
 
-Before using the recorder, make sure to configure:
+### App not working at all
+- Check if your Render deployment is still running
+- Try restarting the app from Render dashboard
+- Create a new deployment if issues persist
 
-1. **cookies.json** (in src/ directory)
-   - Required for accessing TikTok content
-   - See [GUIDE.md](GUIDE.md) for setup instructions
+## 💝 Support This Project
 
-2. **telegram.json** (in src/ directory)
-   - Optional: for uploading recorded videos to Telegram
-   - See [GUIDE.md](GUIDE.md) for setup instructions
+If this tool is helpful to you:
+- ⭐ Star this repository
+- 🐛 Report any issues you find
+- 💬 Share with friends who might find it useful
 
-## Usage
+## 📞 Need Help?
 
-1. **Access the Web Interface**
-   - Local: http://localhost:3001 (development) or http://localhost:3001 (production)
-   - Render: Your app's Render URL
+Having issues? Here's how to get help:
+1. Check the troubleshooting section above
+2. Look through existing GitHub issues
+3. Create a new issue with details about your problem
 
-2. **Start Recording**
-   - Enter TikTok username (without @)
-   - Set check interval (in minutes)
-   - Click "Start Recording"
+---
 
-3. **Monitor Recordings**
-   - View active recordings in real-time
-   - See recording status and timestamps
-   - Stop recordings when needed
+## 🎯 Perfect For
 
-## API Endpoints
+- **Content creators** who want to archive their own streams
+- **Fans** who don't want to miss live content from favorite creators  
+- **Researchers** studying social media content
+- **Anyone** who wants a personal backup of live streams
 
-- `POST /api/start-recording` - Start a new recording
-- `POST /api/stop-recording` - Stop an active recording
-- `GET /api/active` - Get all active recordings
-- `GET /api/status/:username` - Get status for specific user
-- `GET /api/logs/:username` - Get logs for specific recording
+## 🔒 Privacy & Security
 
-## Features
+- All recordings stay on your Google Drive
+- No data is shared with third parties
+- You control all your data and can delete anytime
+- Open source - you can see exactly what the code does
 
-- **Automatic Mode**: Always runs in automatic mode with no update checks
-- **Multi-user Support**: Record multiple users simultaneously
-- **Real-time Updates**: Status updates every 5 seconds
-- **Error Handling**: Graceful error handling and user feedback
-- **Responsive Design**: Works on desktop and mobile devices
+---
 
-## Troubleshooting
-
-1. **Python Dependencies**: Ensure all Python packages are installed
-2. **FFmpeg**: Required for video processing
-3. **Cookies**: Make sure cookies.json is properly configured
-4. **Permissions**: Ensure the application has write permissions for output directory
-
-## Notes
-
-- The web interface automatically adds the `--no-update-check` flag
-- All recordings are saved in the default output directory
-- The interface shows real-time status of recording processes
-- Logs are available through the API for debugging
+*Made with ❤️ for the TikTok community*
