@@ -527,25 +527,4 @@ router.get('/logs/:username', (req, res) => {
   });
 });
 
-// Helper function to check for completed recordings
-async function checkForCompletedRecordings(username) {
-  try {
-    const recordingsDir = path.join(__dirname, '../recordings');
-    const files = await fs.readdir(recordingsDir);
-    
-    // Look for MP4 files for this user
-    const userMp4Files = files.filter(file => 
-      file.includes(`TK_${username}_`) && 
-      file.endsWith('.mp4') &&
-      !file.includes('_flv.')
-    );
-    
-    if (userMp4Files.length > 0) {
-      console.log(`📁 Found ${userMp4Files.length} completed recordings for ${username}`);
-    }
-  } catch (error) {
-    console.error(`❌ Error checking for completed recordings for ${username}:`, error);
-  }
-}
-
 module.exports = router;
