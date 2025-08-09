@@ -13,6 +13,10 @@ def record_user(
     from core.tiktok_recorder import TikTokRecorder
     from utils.logger_manager import logger
     try:
+        # Flush output immediately for web interface
+        sys.stdout.flush()
+        sys.stderr.flush()
+        
         TikTokRecorder(
             url=url,
             user=user,
@@ -27,6 +31,8 @@ def record_user(
         ).run()
     except Exception as e:
         logger.error(f"{e}")
+        sys.stdout.flush()
+        sys.stderr.flush()
 
 
 def run_recordings(args, mode, cookies):
@@ -86,6 +92,10 @@ def main():
     from check_updates import check_updates
 
     try:
+        # Ensure output is flushed immediately
+        sys.stdout.reconfigure(line_buffering=True)
+        sys.stderr.reconfigure(line_buffering=True)
+        
         # validate and parse command line arguments
         args, mode = validate_and_parse_args()
 
@@ -105,9 +115,13 @@ def main():
 
     except TikTokRecorderError as ex:
         logger.error(f"Application Error: {ex}")
+        sys.stdout.flush()
+        sys.stderr.flush()
 
     except Exception as ex:
         logger.critical(f"Generic Error: {ex}", exc_info=True)
+        sys.stdout.flush()
+        sys.stderr.flush()
 
 
 if __name__ == "__main__":
