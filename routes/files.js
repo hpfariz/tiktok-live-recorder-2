@@ -214,6 +214,14 @@ router.get('/info/:filename', async (req, res) => {
   }
 });
 
+// Get active recordings status
+router.get('/active-recordings', (req, res) => {
+  res.json({
+    activeRecordings: Array.from(activeRecordings),
+    count: activeRecordings.size
+  });
+});
+
 // Helper function to format file size
 function formatFileSize(bytes) {
   if (bytes === 0) return '0 Bytes';
