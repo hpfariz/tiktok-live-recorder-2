@@ -549,6 +549,10 @@
                     <div class="item-details">
                         <div><strong>Check Interval:</strong> ${user.interval} minutes</div>
                         <div><strong>Added:</strong> ${new Date(user.addedAt).toLocaleString()}</div>
+                        ${user.hasAutoUploadScheduled ? 
+                            '<div style="color: #f57c00;"><strong>📤 Auto-upload:</strong> Scheduled in ~5 minutes after recording ends</div>' : 
+                            ''
+                        }
                     </div>
                     <div class="item-actions">
                         <button onclick="removeUser('${user.username}')" class="btn btn-danger btn-small">
@@ -557,9 +561,35 @@
                         <button onclick="viewLogs('${user.username}')" class="btn btn-primary btn-small">
                             View Logs
                         </button>
+                        ${user.hasAutoUploadScheduled ? `
+                            <button onclick="cancelAutoUpload('${user.username}')" class="btn btn-warning btn-small">
+                                Cancel Auto-Upload
+                            </button>
+                        ` : ''}
                     </div>
                 </div>
             `).join('');
+        }
+
+        async function cancelAutoUpload(username) {
+            if (!confirm(`Cancel scheduled auto-upload for @${username}?`)) return;
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/recorder/cancel-auto-upload/${username}`, {
+                    method: 'DELETE'
+                });
+
+                const data = await response.json();
+                
+                if (response.ok) {
+                    alert(`Auto-upload cancelled for @${username}`);
+                    loadDashboard();
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            } catch (error) {
+                alert('Failed to cancel auto-upload: ' + error.message);
+            }
         }
 
         async function addUser(event) {

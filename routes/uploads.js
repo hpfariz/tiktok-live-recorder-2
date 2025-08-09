@@ -134,6 +134,64 @@ router.get('/', (req, res) => {
   });
 });
 
+// Auto-upload files for a specific user (called by recorder after 5 minutes)
+router.post('/auto-upload/:username', async (req, res) => {
+  const { username } = req.params;
+  const recordingsDir = path.join(__dirname, '../recordings');
+  
+  try {
+    const files = await fs.readdir(recordingsDir);
+    
+    // Find MP4 files for this user that haven't been uploaded yet
+    const userMp4Files = files.filter(file => 
+      file.includes(`TK_${username}_`) && 
+      file.endsWith('.mp4') && 
+      !file.includes('_flv.') &&
+      !uploadQueue.has(file) && 
+      !uploadHistory.has(file)
+    );
+
+    if (userMp4Files.length === 0) {
+      return res.json({ 
+        message: `No new files found for @${username} to auto-upload`,
+        username,
+        filesFound: 0
+      });
+    }
+
+    // Start uploads for all new MP4 files for this user
+    const uploads = userMp4Files.map(filename => {
+      const filePath = path.join(recordingsDir, filename);
+      const remotePath = `drive:root/pop4u/tiktok-live-recorder/${username}/${filename}`;
+
+      uploadQueue.set(filename, {
+        status: 'uploading',
+        startTime: new Date(),
+        progress: 0,
+        remotePath,
+        username,
+        isAutoUpload: true // Flag to identify auto-uploads
+      });
+
+      startUpload(filename, filePath, remotePath);
+      
+      return { filename, remotePath };
+    });
+
+    console.log(`🤖 Auto-upload started for @${username}: ${uploads.length} files`);
+
+    res.json({ 
+      message: `Auto-upload started for @${username}: ${uploads.length} files`,
+      username,
+      filesFound: uploads.length,
+      uploads
+    });
+  } catch (error) {
+    console.error(`Auto-upload error for @${username}:`, error);
+    res.status(500).json({ error: `Failed to start auto-upload for @${username}` });
+  }
+});
+
 // Upload file to Google Drive
 router.post('/upload/:filename', async (req, res) => {
   const { filename } = req.params;
