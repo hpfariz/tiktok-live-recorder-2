@@ -13,5 +13,29 @@ recordings/*.flv
 frontend/
 backend/
 setup.sh
-Dockerfile
 .dockerignore
+
+# Development files
+*.md
+.vscode/
+.idea/
+
+# Git
+.git/
+.gitignore
+
+# Build artifacts
+dist/
+build/
+
+# Logs
+logs/
+*.log
+
+# Temporary files
+tmp/
+temp/
+
+# OS files
+.DS_Store
+Thumbs.db
