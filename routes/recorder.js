@@ -13,11 +13,14 @@ let monitoredUsers = new Map(); // username -> user info
 async function notifyFileStatus(filename, isRecording) {
   try {
     const method = isRecording ? 'mark-recording' : 'mark-finished';
-    const response = await fetch(`http://localhost:${process.env.PORT || 10000}/api/files/${method}/${filename}`, {
+    const port = process.env.PORT || 10000;
+    const response = await fetch(`http://localhost:${port}/api/files/${method}/${filename}`, {
       method: 'POST'
     });
     if (!response.ok) {
       console.log(`Failed to notify file status for ${filename}: ${response.statusText}`);
+    } else {
+      console.log(`✅ Successfully notified: ${filename} ${isRecording ? 'started' : 'finished'}`);
     }
   } catch (error) {
     console.log(`Error notifying file status for ${filename}:`, error.message);
