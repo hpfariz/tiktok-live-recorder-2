@@ -6,9 +6,9 @@ services:
     buildCommand: |
       # Install rclone
       curl https://rclone.org/install.sh | bash
-      # Install Python dependencies only
+      # Install Python dependencies
       pip install -r requirements.txt
-      # Install Node dependencies
+      # Install Node dependencies  
       npm install
     startCommand: npm start
     envVars:
