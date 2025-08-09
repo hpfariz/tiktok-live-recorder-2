@@ -598,4 +598,30 @@ router.get('/debug/files/:username', async (req, res) => {
   }
 });
 
+// Manual trigger for auto-upload (for testing)
+router.post('/debug/trigger-auto-upload/:username', async (req, res) => {
+  const { username } = req.params;
+  
+  console.log(`🔧 DEBUG: Manually triggering auto-upload for @${username}`);
+  
+  try {
+    const response = await fetch(`http://localhost:${process.env.PORT || 10000}/api/uploads/auto-upload/${username}`, {
+      method: 'POST'
+    });
+    
+    const data = await response.json();
+    
+    res.json({
+      success: response.ok,
+      message: data.message,
+      data: data
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 module.exports = router;
