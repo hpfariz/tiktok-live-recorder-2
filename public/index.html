@@ -741,6 +741,25 @@
             }).join('');
         }
 
+        async function forceRefreshFileStatus() {
+            try {
+                const response = await fetch(`${API_BASE}/api/files/debug/clear-stuck`, {
+                    method: 'POST'
+                });
+
+                const data = await response.json();
+                
+                if (response.ok) {
+                    alert(`✅ ${data.message}`);
+                    loadFiles();
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            } catch (error) {
+                alert('Failed to refresh status: ' + error.message);
+            }
+        }
+
         async function refreshFiles() {
             loadFiles();
         }
@@ -867,26 +886,6 @@
                         </div>
                     </div>
                 `).join('');
-            }
-        }
-
-        async function forceRefreshFileStatus() {
-            try {
-                // Clear any stuck recordings
-                const response = await fetch(`${API_BASE}/api/files/debug/clear-stuck`, {
-                    method: 'POST'
-                });
-
-                const data = await response.json();
-                
-                if (response.ok) {
-                    alert(`✅ ${data.message}`);
-                    loadFiles(); // Refresh the files list
-                } else {
-                    alert('Error: ' + data.error);
-                }
-            } catch (error) {
-                alert('Failed to refresh status: ' + error.message);
             }
         }
 
