@@ -135,7 +135,6 @@ router.get('/monitored', (req, res) => {
       hasAutoUploadScheduled: autoUploadTimers.has(username)
     }));
     
-    console.log(`📊 Returning ${users.length} monitored users`);
     res.json(users);
   } catch (error) {
     console.error('Error in /monitored endpoint:', error);
@@ -182,7 +181,6 @@ router.delete('/monitor/:username', (req, res) => {
   if (autoUploadTimers.has(username)) {
     clearTimeout(autoUploadTimers.get(username));
     autoUploadTimers.delete(username);
-    console.log(`🚫 Cancelled auto-upload timer for @${username}`);
   }
   
   // Stop any active recording gracefully
@@ -265,7 +263,7 @@ router.get('/auto-upload-status', (req, res) => {
   const timers = Array.from(autoUploadTimers.entries()).map(([username, timer]) => ({
     username,
     scheduled: true,
-    timerId: timer._idleTimeout // Approximate time remaining
+    timerId: timer._idleTimeout
   }));
 
   res.json({
@@ -332,7 +330,7 @@ function startMonitoring(username, interval) {
   // Handle process output
   pythonProcess.stdout.on('data', (data) => {
     const log = data.toString().trim();
-    console.log(`[${username}] INFO: ${log}`);
+    console.log(`[${username}] ${log}`);
     
     const recording = activeRecordings.get(username);
     if (recording) {
@@ -347,7 +345,6 @@ function startMonitoring(username, interval) {
         if (autoUploadTimers.has(username)) {
           clearTimeout(autoUploadTimers.get(username));
           autoUploadTimers.delete(username);
-          console.log(`🚫 Cancelled previous auto-upload timer for @${username} (new recording started)`);
         }
         
         // Extract filename from log - look for the FLV filename pattern
@@ -368,7 +365,6 @@ function startMonitoring(username, interval) {
             .slice(0, 15);
           const expectedFilename = `TK_${username}_${timestamp}_flv.mp4`;
           recording.filename = expectedFilename;
-          console.log(`📁 Generated filename: ${recording.filename}`);
           
           // Notify files API that recording started
           notifyFileStatus(recording.filename, true);
@@ -381,13 +377,8 @@ function startMonitoring(username, interval) {
         recording.recordingEndTime = new Date();
         
         if (recording.filename) {
-          console.log(`📤 Processing finished recording: ${recording.filename}`);
-          
           // Notify files API that recording finished
           notifyFileStatus(recording.filename, false);
-          
-          // The auto-upload will be triggered when conversion completes
-          // (handled in the conversion detection code above)
         }
         
         recording.status = 'monitoring';
@@ -395,19 +386,8 @@ function startMonitoring(username, interval) {
       }
       
       // Check for conversion completion
-      if (log.includes('Finished converting')) {
+      if (log.includes('Finished converting') || log.includes('already in MP4 format') || log.includes('skipping conversion')) {
         console.log(`✅ Conversion process completed for @${username}`);
-        
-        // Start auto-upload immediately instead of waiting 5 minutes
-        setTimeout(() => {
-          console.log(`⏰ Auto-upload starting now for @${username}`);
-          startAutoUpload(username);
-        }, 10000); // Wait just 10 seconds to ensure file is fully written
-      }
-      
-      // Also check for "already in MP4 format" message
-      if (log.includes('already in MP4 format') || log.includes('skipping conversion')) {
-        console.log(`✅ File already in MP4 format, starting immediate auto-upload for @${username}`);
         
         // Start auto-upload immediately instead of waiting 5 minutes
         setTimeout(() => {
@@ -429,8 +409,6 @@ function startMonitoring(username, interval) {
     // Don't treat all stderr as errors - some are just info messages
     if (log.includes('[!]') || log.includes('ERROR') || log.includes('error:')) {
       console.error(`[${username}] ERROR: ${log}`);
-    } else {
-      console.log(`[${username}] INFO: ${log}`);
     }
     
     const recording = activeRecordings.get(username);
@@ -439,19 +417,8 @@ function startMonitoring(username, interval) {
       recording.logs.push({ type: logType, message: log, timestamp: new Date() });
       
       // Check for conversion completion in stderr as well
-      if (log.includes('Finished converting')) {
-        console.log(`✅ Conversion process completed for @${username} (from stderr)`);
-        
-        // Start auto-upload immediately instead of waiting 5 minutes
-        setTimeout(() => {
-          console.log(`⏰ Auto-upload starting now for @${username}`);
-          startAutoUpload(username);
-        }, 10000); // Wait just 10 seconds to ensure file is fully written
-      }
-      
-      // Also check for "already in MP4 format" message in stderr
-      if (log.includes('already in MP4 format') || log.includes('skipping conversion')) {
-        console.log(`✅ File already in MP4 format, starting immediate auto-upload for @${username} (from stderr)`);
+      if (log.includes('Finished converting') || log.includes('already in MP4 format') || log.includes('skipping conversion')) {
+        console.log(`✅ Conversion process completed for @${username}`);
         
         // Start auto-upload immediately instead of waiting 5 minutes
         setTimeout(() => {
@@ -528,7 +495,6 @@ router.post('/debug/trigger-auto-upload/:username', (req, res) => {
   if (autoUploadTimers.has(username)) {
     clearTimeout(autoUploadTimers.get(username));
     autoUploadTimers.delete(username);
-    console.log(`🚫 Cleared existing auto-upload timer for @${username}`);
   }
   
   // Start auto-upload immediately
