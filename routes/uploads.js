@@ -20,16 +20,33 @@ function setupRclone() {
     return false;
   }
 
-  // Decode base64 token if it's encoded
-  let decodedToken;
+  let actualToken;
+  
   try {
-    decodedToken = Buffer.from(token, 'base64').toString('utf-8');
-    // If it's already JSON, use it as is
-    if (!decodedToken.startsWith('{')) {
-      decodedToken = token; // Use original if not base64
+    // First try to decode base64
+    const decoded = Buffer.from(token, 'base64').toString('utf-8');
+    console.log('Decoded token content:', decoded.substring(0, 100) + '...');
+    
+    // Check if it's a full rclone config or just a token
+    if (decoded.includes('token = ')) {
+      // Extract just the token part from the config
+      const tokenMatch = decoded.match(/token = ({.*?})/s);
+      if (tokenMatch) {
+        actualToken = tokenMatch[1];
+        console.log('Extracted token from config');
+      } else {
+        throw new Error('Could not extract token from config');
+      }
+    } else if (decoded.startsWith('{')) {
+      // It's already a JSON token
+      actualToken = decoded;
+    } else {
+      // Use original token
+      actualToken = token;
     }
   } catch (error) {
-    decodedToken = token; // Use original if decode fails
+    console.log('Token decode failed, using as-is:', error.message);
+    actualToken = token;
   }
 
   // Create rclone config
@@ -38,7 +55,7 @@ type = drive
 client_id = ${clientId}
 client_secret = ${clientSecret}
 scope = drive
-token = ${decodedToken}
+token = ${actualToken}
 team_drive = 
 `;
 
@@ -49,6 +66,7 @@ team_drive =
     fs.ensureDirSync(configDir);
     fs.writeFileSync(configPath, configContent);
     console.log('Rclone config created successfully');
+    console.log('Config preview:', configContent.substring(0, 200) + '...');
     return true;
   } catch (error) {
     console.error('Failed to setup rclone config:', error);
