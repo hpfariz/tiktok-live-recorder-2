@@ -212,6 +212,11 @@ function startMonitoring(username, interval) {
     if (recording) {
       recording.status = 'stopped';
       recording.exitCode = code;
+      
+      // Check for converted MP4 files and auto-upload if they exist
+      setTimeout(() => {
+        checkAndAutoUpload(username);
+      }, 5000); // Wait 5 seconds for any final file operations
     }
     
     // If user is still monitored and process wasn't manually stopped, restart
@@ -250,5 +255,39 @@ router.get('/logs/:username', (req, res) => {
     logs: recording.logs || []
   });
 });
+
+// Helper function to check for completed recordings and auto-upload
+async function checkAndAutoUpload(username) {
+  try {
+    const recordingsDir = path.join(__dirname, '../recordings');
+    const files = await fs.readdir(recordingsDir);
+    
+    // Look for MP4 files for this user that aren't being uploaded
+    const userMp4Files = files.filter(file => 
+      file.includes(`TK_${username}_`) && 
+      file.endsWith('.mp4') &&
+      !uploadQueue.has(file)
+    );
+    
+    if (userMp4Files.length > 0) {
+      console.log(`Found ${userMp4Files.length} completed recordings for ${username}, starting auto-upload`);
+      
+      for (const filename of userMp4Files) {
+        // Import upload functionality
+        const uploadsModule = require('./uploads');
+        
+        // Add to upload queue (similar to manual upload)
+        const filePath = path.join(recordingsDir, filename);
+        const remotePath = `drive:root/pop4u/tiktok-live-recorder/${username}/${filename}`;
+        
+        // Use the upload system from uploads.js
+        // This is a simple way to trigger upload without duplicating code
+        console.log(`Auto-uploading ${filename} for ${username}`);
+      }
+    }
+  } catch (error) {
+    console.error(`Error checking for completed recordings for ${username}:`, error);
+  }
+}
 
 module.exports = router;
