@@ -75,6 +75,29 @@ router.get('/', async (req, res) => {
           type = match[3];
         }
 
+        // Determine if file is currently being recorded
+        let isCurrentlyRecording = false;
+        
+        // First check our active recordings tracker
+        if (isActivelyRecording(filename)) {
+          isCurrentlyRecording = true;
+        } else if (filename.includes('_flv.')) {
+          // For .flv files, also check if file size is changing
+          isCurrentlyRecording = await isFileBeingWritten(filePath);
+        } else {
+          // For .mp4 files, check if corresponding .flv file exists and is being written
+          const flvVersion = filename.replace('.mp4', '_flv.mp4');
+          const flvPath = path.join(recordingsDir, flvVersion);
+          
+          if (await fs.pathExists(flvPath)) {
+            // If .flv exists, .mp4 is not the active recording
+            isCurrentlyRecording = false;
+          } else {
+            // No .flv file, check if .mp4 is being written directly
+            isCurrentlyRecording = await isFileBeingWritten(filePath);
+          }
+        }
+
         return {
           filename,
           path: filePath,
@@ -86,8 +109,7 @@ router.get('/', async (req, res) => {
           recordDate,
           type,
           extension: filename.split('.').pop(),
-          isCurrentlyRecording: filename.includes('_flv.') && 
-                               await isFileBeingWritten(filePath)
+          isCurrentlyRecording
         };
       })
     );
@@ -173,8 +195,8 @@ router.get('/info/:filename', async (req, res) => {
       sizeFormatted: formatFileSize(stats.size),
       createdAt: stats.birthtime,
       modifiedAt: stats.mtime,
-      isCurrentlyRecording: filename.includes('_flv.') && 
-                           await isFileBeingWritten(filePath)
+      isCurrentlyRecording: isActivelyRecording(filename) || 
+                           (filename.includes('_flv.') && await isFileBeingWritten(filePath))
     });
   } catch (error) {
     console.error('File info error:', error);
@@ -193,15 +215,21 @@ function formatFileSize(bytes) {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
-// Helper function to check if file is being written to
+// Helper function to check if file is being written to (improved version)
 async function isFileBeingWritten(filePath) {
   try {
     const stats1 = await fs.stat(filePath);
-    await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+    
+    // Wait a bit longer for more accurate detection
+    await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
+    
     const stats2 = await fs.stat(filePath);
     
-    // If size changed, file is being written to
-    return stats1.size !== stats2.size;
+    // Check both size and modification time
+    const sizeChanged = stats1.size !== stats2.size;
+    const timeChanged = Math.abs(stats2.mtime.getTime() - stats1.mtime.getTime()) < 5000; // Modified within last 5 seconds
+    
+    return sizeChanged || timeChanged;
   } catch {
     return false;
   }
