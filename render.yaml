@@ -1,22 +1,31 @@
 services:
   - type: web
     name: tiktok-live-recorder-web
-    env: node
+    env: docker
     plan: free
-    buildCommand: |
-      # Install rclone
-      curl https://rclone.org/install.sh | bash
-      # Install Python dependencies
-      pip install -r requirements.txt
-      # Install Node dependencies  
-      npm install
-    startCommand: npm start
+    dockerfilePath: ./Dockerfile
+    autoDeploy: false
     envVars:
       - key: NODE_ENV
         value: production
+      - key: PORT
+        value: 10000
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: PYTHONDONTWRITEBYTECODE
+        value: "1"
+      # Google Drive configuration (set these in Render dashboard)
       - key: RCLONE_DRIVE_CLIENT_ID
         sync: false
       - key: RCLONE_DRIVE_CLIENT_SECRET
         sync: false
       - key: RCLONE_DRIVE_TOKEN
         sync: false
+    buildFilter:
+      paths:
+      - "**"
+      ignoredPaths:
+      - "frontend/**"
+      - "backend/**"
+      - "*.md"
+      - ".git/**"
