@@ -11,54 +11,60 @@ let uploadHistory = new Map(); // filename -> upload result
 
 // Configure rclone with environment variables
 function setupRclone() {
+  console.log('🔧 Setting up rclone configuration...');
+  
   const clientId = process.env.RCLONE_DRIVE_CLIENT_ID;
   const clientSecret = process.env.RCLONE_DRIVE_CLIENT_SECRET;
   const token = process.env.RCLONE_DRIVE_TOKEN;
 
+  console.log('Environment variables check:');
+  console.log('- CLIENT_ID:', clientId ? 'Present' : 'Missing');
+  console.log('- CLIENT_SECRET:', clientSecret ? 'Present' : 'Missing');
+  console.log('- TOKEN:', token ? 'Present' : 'Missing');
+
   if (!clientId || !clientSecret || !token) {
-    console.error('Missing rclone environment variables');
+    console.error('❌ Missing rclone environment variables');
     return false;
   }
 
   let actualToken;
   
   try {
-    // Remove quotes and decode base64
-    const cleanToken = token.replace(/^"(.*)"$/, '$1');
-    const decoded = Buffer.from(cleanToken, 'base64').toString('utf-8');
+    // Remove surrounding quotes if present
+    let cleanToken = token.trim();
+    if (cleanToken.startsWith("'") && cleanToken.endsWith("'")) {
+      cleanToken = cleanToken.slice(1, -1);
+    }
+    if (cleanToken.startsWith('"') && cleanToken.endsWith('"')) {
+      cleanToken = cleanToken.slice(1, -1);
+    }
     
-    console.log('Decoded rclone config preview:');
-    console.log(decoded.substring(0, 300) + '...');
+    console.log('Cleaned token preview:', cleanToken.substring(0, 50) + '...');
     
-    // Extract the JSON token using a more robust regex that handles newlines
-    const tokenMatch = decoded.match(/token = ({.*?})/s);
-    if (tokenMatch) {
-      // Clean up the token - remove any \r\n and extra whitespace
-      let extractedToken = tokenMatch[1].replace(/\r?\n/g, '').trim();
+    // Check if it's already JSON
+    if (cleanToken.startsWith('{') && cleanToken.endsWith('}')) {
+      // Validate JSON
+      const parsed = JSON.parse(cleanToken);
+      console.log('✅ Token is valid JSON');
+      console.log('Token expires:', parsed.expiry);
       
-      // Handle the specific case where there might be extra characters
-      const jsonStart = extractedToken.indexOf('{');
-      const jsonEnd = extractedToken.lastIndexOf('}') + 1;
-      if (jsonStart !== -1 && jsonEnd !== -1) {
-        extractedToken = extractedToken.substring(jsonStart, jsonEnd);
+      // Check if token is expired
+      const expiryDate = new Date(parsed.expiry);
+      const now = new Date();
+      if (expiryDate < now) {
+        console.warn('⚠️ WARNING: Token appears to be expired!');
+        console.warn('Expiry:', expiryDate.toISOString());
+        console.warn('Now:   ', now.toISOString());
       }
       
-      console.log('Extracted and cleaned token:', extractedToken);
-      
-      // Validate it's proper JSON
-      const parsed = JSON.parse(extractedToken);
-      console.log('Token validation passed. Expires:', parsed.expiry);
-      
-      actualToken = extractedToken;
+      actualToken = cleanToken;
     } else {
-      throw new Error('Could not extract token from config');
+      throw new Error('Token does not appear to be valid JSON format');
     }
     
   } catch (error) {
-    console.error('Token parsing failed:', error.message);
-    console.log('Raw token preview:', token.substring(0, 100));
-    
-    // Use a fresh token that needs to be regenerated
+    console.error('❌ Token parsing failed:', error.message);
+    console.error('Raw token preview:', token.substring(0, 100));
     return false;
   }
 
