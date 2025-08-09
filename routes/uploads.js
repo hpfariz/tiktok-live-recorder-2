@@ -78,11 +78,10 @@ team_drive =
   try {
     fs.ensureDirSync(configDir);
     fs.writeFileSync(configPath, configContent);
-    console.log('Rclone config created successfully');
-    console.log('Config preview:', configContent.substring(0, 200) + '...');
+    console.log('✅ Rclone config created successfully');
     return true;
   } catch (error) {
-    console.error('Failed to setup rclone config:', error);
+    console.error('❌ Failed to setup rclone config:', error);
     return false;
   }
 }
