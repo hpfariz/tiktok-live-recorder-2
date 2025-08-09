@@ -20,13 +20,25 @@ function setupRclone() {
     return false;
   }
 
+  // Decode base64 token if it's encoded
+  let decodedToken;
+  try {
+    decodedToken = Buffer.from(token, 'base64').toString('utf-8');
+    // If it's already JSON, use it as is
+    if (!decodedToken.startsWith('{')) {
+      decodedToken = token; // Use original if not base64
+    }
+  } catch (error) {
+    decodedToken = token; // Use original if decode fails
+  }
+
   // Create rclone config
   const configContent = `[drive]
 type = drive
 client_id = ${clientId}
 client_secret = ${clientSecret}
 scope = drive
-token = ${token}
+token = ${decodedToken}
 team_drive = 
 `;
 
@@ -36,6 +48,7 @@ team_drive =
   try {
     fs.ensureDirSync(configDir);
     fs.writeFileSync(configPath, configContent);
+    console.log('Rclone config created successfully');
     return true;
   } catch (error) {
     console.error('Failed to setup rclone config:', error);
