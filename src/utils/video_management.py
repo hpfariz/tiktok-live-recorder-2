@@ -67,27 +67,99 @@ class VideoManagement:
             os.remove(file)  # Remove the source file
             return
 
-        try:
-            ffmpeg.input(file).output(
-                output_file,
-                c='copy',
-                y='-y',
-            ).run(quiet=True)
+        # Check FFmpeg version
+        version, version_info = VideoManagement.check_ffmpeg_version()
+        logger.info(f"FFmpeg version: {version_info.split()[2] if version_info else 'Unknown'}")
+        
+        # If FFmpeg version is too old, try alternative conversion methods
+        if version and version < 4.4:
+            logger.warning("FFmpeg version may be too old for newer TikTok codecs. Trying alternative conversion...")
             
-            # Only remove source file if conversion was successful
+        try:
+            # First, try the standard copy method
+            try:
+                ffmpeg.input(file).output(
+                    output_file,
+                    c='copy',
+                    y='-y',
+                ).run(quiet=True, overwrite_output=True)
+                
+            except ffmpeg.Error as e:
+                # If copy fails, try re-encoding with different codecs
+                logger.warning("Direct copy failed, trying re-encoding...")
+                
+                # Try with libx264 and aac
+                try:
+                    ffmpeg.input(file).output(
+                        output_file,
+                        vcodec='libx264',
+                        acodec='aac',
+                        preset='fast',
+                        crf=23,
+                        y='-y',
+                    ).run(quiet=True, overwrite_output=True)
+                    
+                except ffmpeg.Error as e2:
+                    # Last resort: try with more compatible settings
+                    logger.warning("Standard re-encoding failed, trying compatibility mode...")
+                    
+                    ffmpeg.input(file).output(
+                        output_file,
+                        vcodec='libx264',
+                        acodec='aac',
+                        preset='ultrafast',
+                        pix_fmt='yuv420p',
+                        movflags='faststart',
+                        y='-y',
+                    ).run(quiet=True, overwrite_output=True)
+            
+            # Verify conversion success
             if os.path.exists(output_file):
-                # Verify the output file has content
                 output_size = os.path.getsize(output_file)
                 if output_size > 0:
-                    os.remove(file)
-                    logger.info("Finished converting")
+                    # Check if the output file is actually playable
+                    try:
+                        # Quick probe to verify the file is valid
+                        probe = ffmpeg.probe(output_file)
+                        if probe.get('streams'):
+                            os.remove(file)
+                            logger.info("Finished converting")
+                            return
+                        else:
+                            raise Exception("Output file has no valid streams")
+                    except Exception as probe_error:
+                        logger.error(f"Converted file is not valid: {probe_error}")
+                        # Don't remove source file if output is invalid
+                        if os.path.exists(output_file):
+                            os.remove(output_file)
+                        return
                 else:
                     logger.error(f"Conversion failed - output file is empty")
-                    # Don't remove source file if conversion failed
+                    if os.path.exists(output_file):
+                        os.remove(output_file)
+                    return
             else:
                 logger.error(f"Conversion failed - output file not created")
+                return
                 
         except ffmpeg.Error as e:
-            logger.error(f"ffmpeg error: {e.stderr.decode() if hasattr(e, 'stderr') else str(e)}")
+            error_msg = e.stderr.decode() if hasattr(e, 'stderr') and e.stderr else str(e)
+            logger.error(f"FFmpeg conversion error: {error_msg}")
+            
+            # Check if it's a codec issue
+            if "codec" in error_msg.lower() and "not implemented" in error_msg.lower():
+                logger.error("FFmpeg version is too old for this video codec. Please update FFmpeg to version 5.0 or later.")
+                logger.error("Installation commands:")
+                logger.error("Ubuntu/Debian: sudo apt update && sudo apt install -y software-properties-common && sudo add-apt-repository ppa:jonathonf/ffmpeg-4 && sudo apt update && sudo apt install ffmpeg")
+                logger.error("CentOS/RHEL: sudo yum install -y epel-release && sudo yum install -y ffmpeg")
+                logger.error("Or compile from source: https://ffmpeg.org/download.html#build-linux")
+            
+            # Don't remove source file if conversion failed
+            if os.path.exists(output_file):
+                os.remove(output_file)
+                
         except Exception as e:
             logger.error(f"Conversion error: {str(e)}")
+            # Don't remove source file if conversion failed
+            if os.path.exists(output_file):
+                os.remove(output_file)
