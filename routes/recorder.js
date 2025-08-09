@@ -2,6 +2,7 @@ const express = require('express');
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs-extra');
+const http = require('http');
 
 const router = express.Router();
 
@@ -10,42 +11,110 @@ let activeRecordings = new Map(); // username -> recording info
 let monitoredUsers = new Map(); // username -> user info
 let autoUploadTimers = new Map(); // username -> timer reference
 
-// Helper function to notify files API about recording status
+// Helper function to notify files API about recording status using Node.js http
 async function notifyFileStatus(filename, isRecording) {
-  try {
-    const method = isRecording ? 'mark-recording' : 'mark-finished';
-    const port = process.env.PORT || 10000;
-    const response = await fetch(`http://localhost:${port}/api/files/${method}/${filename}`, {
-      method: 'POST'
-    });
-    if (!response.ok) {
-      console.log(`Failed to notify file status for ${filename}: ${response.statusText}`);
-    } else {
-      console.log(`✅ Successfully notified: ${filename} ${isRecording ? 'started' : 'finished'}`);
+  return new Promise((resolve) => {
+    try {
+      const method = isRecording ? 'mark-recording' : 'mark-finished';
+      const port = process.env.PORT || 10000;
+      const path = `/api/files/${method}/${encodeURIComponent(filename)}`;
+      
+      const postData = JSON.stringify({});
+      
+      const options = {
+        hostname: 'localhost',
+        port: port,
+        path: path,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(postData)
+        }
+      };
+
+      const req = http.request(options, (res) => {
+        let data = '';
+        res.on('data', (chunk) => {
+          data += chunk;
+        });
+        
+        res.on('end', () => {
+          if (res.statusCode === 200) {
+            console.log(`✅ Successfully notified: ${filename} ${isRecording ? 'started' : 'finished'}`);
+          } else {
+            console.log(`Failed to notify file status for ${filename}: ${res.statusCode}`);
+          }
+          resolve();
+        });
+      });
+
+      req.on('error', (error) => {
+        console.log(`Error notifying file status for ${filename}:`, error.message);
+        resolve();
+      });
+
+      req.write(postData);
+      req.end();
+    } catch (error) {
+      console.log(`Error notifying file status for ${filename}:`, error.message);
+      resolve();
     }
-  } catch (error) {
-    console.log(`Error notifying file status for ${filename}:`, error.message);
-  }
+  });
 }
 
-// Helper function to start auto-upload for a user's files
+// Helper function to start auto-upload for a user's files using Node.js http
 async function startAutoUpload(username) {
-  try {
-    const port = process.env.PORT || 10000;
-    const response = await fetch(`http://localhost:${port}/api/uploads/auto-upload/${username}`, {
-      method: 'POST'
-    });
+  return new Promise((resolve) => {
+    try {
+      const port = process.env.PORT || 10000;
+      const path = `/api/uploads/auto-upload/${encodeURIComponent(username)}`;
+      
+      const postData = JSON.stringify({});
+      
+      const options = {
+        hostname: 'localhost',
+        port: port,
+        path: path,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(postData)
+        }
+      };
 
-    if (response.ok) {
-      const data = await response.json();
-      console.log(`🔄 Auto-upload started for @${username}: ${data.message}`);
-    } else {
-      const errorData = await response.json();
-      console.log(`❌ Auto-upload failed for @${username}: ${errorData.error}`);
+      const req = http.request(options, (res) => {
+        let data = '';
+        res.on('data', (chunk) => {
+          data += chunk;
+        });
+        
+        res.on('end', () => {
+          try {
+            const responseData = JSON.parse(data);
+            if (res.statusCode === 200) {
+              console.log(`🔄 Auto-upload started for @${username}: ${responseData.message}`);
+            } else {
+              console.log(`❌ Auto-upload failed for @${username}: ${responseData.error || 'Unknown error'}`);
+            }
+          } catch (parseError) {
+            console.log(`❌ Auto-upload response parse error for @${username}:`, parseError.message);
+          }
+          resolve();
+        });
+      });
+
+      req.on('error', (error) => {
+        console.error(`Error starting auto-upload for @${username}:`, error.message);
+        resolve();
+      });
+
+      req.write(postData);
+      req.end();
+    } catch (error) {
+      console.error(`Error starting auto-upload for @${username}:`, error.message);
+      resolve();
     }
-  } catch (error) {
-    console.error(`Error starting auto-upload for @${username}:`, error.message);
-  }
+  });
 }
 
 // Test endpoint
