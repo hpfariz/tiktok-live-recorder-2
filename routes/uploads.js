@@ -342,14 +342,35 @@ router.delete('/cancel/:filename', (req, res) => {
 
 // Start upload function
 function startUpload(filename, filePath, remotePath) {
-  console.log(`Starting upload: ${filename} -> ${remotePath}`);
+  console.log(`🚀 Starting upload: ${filename} -> ${remotePath}`);
+
+  // Verify file exists and get size
+  if (!fs.existsSync(filePath)) {
+    console.error(`❌ File not found: ${filePath}`);
+    const uploadInfo = uploadQueue.get(filename);
+    if (uploadInfo) {
+      uploadHistory.set(filename, {
+        ...uploadInfo,
+        status: 'failed',
+        error: 'File not found',
+        completedAt: new Date()
+      });
+      uploadQueue.delete(filename);
+    }
+    return;
+  }
+
+  const fileStats = fs.statSync(filePath);
+  console.log(`📊 File size: ${(fileStats.size / 1024 / 1024).toFixed(2)} MB`);
 
   const rcloneProcess = spawn('rclone', [
     'copy',
     filePath,
     path.dirname(remotePath),
     '--progress',
-    '--stats', '1s'
+    '--stats', '1s',
+    '--transfers', '1',
+    '--checkers', '1'
   ], {
     stdio: ['pipe', 'pipe', 'pipe']
   });
@@ -357,23 +378,36 @@ function startUpload(filename, filePath, remotePath) {
   const uploadInfo = uploadQueue.get(filename);
   if (uploadInfo) {
     uploadInfo.process = rcloneProcess;
+    uploadInfo.fileSize = fileStats.size;
   }
 
   // Handle progress output
   rcloneProcess.stderr.on('data', (data) => {
     const output = data.toString();
-    console.log(`[Upload ${filename}] ${output}`);
+    
+    // Log all rclone output for debugging
+    console.log(`[Upload ${filename}] ${output.trim()}`);
 
     // Parse progress (rclone outputs progress to stderr)
     const progressMatch = output.match(/(\d+)%/);
     if (progressMatch && uploadInfo) {
-      uploadInfo.progress = parseInt(progressMatch[1]);
+      const newProgress = parseInt(progressMatch[1]);
+      if (newProgress !== uploadInfo.progress) {
+        uploadInfo.progress = newProgress;
+        console.log(`📈 Upload progress for ${filename}: ${newProgress}%`);
+      }
+    }
+
+    // Look for transfer rate info
+    const transferMatch = output.match(/(\d+\.\d+\s*[kMG]?Bytes\/s)/);
+    if (transferMatch && uploadInfo) {
+      uploadInfo.transferRate = transferMatch[1];
     }
   });
 
   rcloneProcess.stdout.on('data', (data) => {
     const output = data.toString();
-    console.log(`[Upload ${filename}] ${output}`);
+    console.log(`[Upload ${filename}] STDOUT: ${output.trim()}`);
   });
 
   rcloneProcess.on('close', (code) => {
@@ -388,19 +422,19 @@ function startUpload(filename, filePath, remotePath) {
         ...uploadInfo,
         status: code === 0 ? 'completed' : 'failed',
         completedAt: new Date(),
-        exitCode: code
+        exitCode: code,
+        progress: code === 0 ? 100 : uploadInfo.progress || 0
       });
 
       // Remove from queue
       uploadQueue.delete(filename);
 
-      // If upload successful and auto-delete is enabled, delete local file
       if (code === 0) {
-        console.log(`${uploadType} completed successfully for ${filename}`);
+        console.log(`✅ ${uploadType} completed successfully for ${filename}`);
         // Optionally delete local file after successful upload
         // fs.remove(filePath).catch(console.error);
       } else {
-        console.error(`${uploadType} failed for ${filename} with code ${code}`);
+        console.error(`❌ ${uploadType} failed for ${filename} with code ${code}`);
       }
     }
   });
@@ -412,7 +446,7 @@ function startUpload(filename, filePath, remotePath) {
     if (uploadInfo) {
       uploadHistory.set(filename, {
         ...uploadInfo,
-        status: 'error',
+        status: 'failed',
         error: error.message,
         completedAt: new Date()
       });
