@@ -17,19 +17,20 @@ async function notifyFileStatus(filename, isRecording) {
     try {
       const method = isRecording ? 'mark-recording' : 'mark-finished';
       const port = process.env.PORT || 10000;
-      const path = `/api/files/${method}/${encodeURIComponent(filename)}`;
+      const apiPath = `/api/files/${method}/${encodeURIComponent(filename)}`;
       
       const postData = JSON.stringify({});
       
       const options = {
         hostname: 'localhost',
         port: port,
-        path: path,
+        path: apiPath,
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Content-Length': Buffer.byteLength(postData)
-        }
+        },
+        timeout: 5000
       };
 
       const req = http.request(options, (res) => {
@@ -73,19 +74,20 @@ async function startAutoUpload(username) {
   return new Promise((resolve) => {
     try {
       const port = process.env.PORT || 10000;
-      const path = `/api/uploads/auto-upload/${encodeURIComponent(username)}`;
+      const apiPath = `/api/uploads/auto-upload/${encodeURIComponent(username)}`;
       
       const postData = JSON.stringify({});
       
       const options = {
         hostname: 'localhost',
         port: port,
-        path: path,
+        path: apiPath,
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Content-Length': Buffer.byteLength(postData)
-        }
+        },
+        timeout: 10000
       };
 
       const req = http.request(options, (res) => {
