@@ -17,11 +17,6 @@ function setupRclone() {
   const clientSecret = process.env.RCLONE_DRIVE_CLIENT_SECRET;
   const token = process.env.RCLONE_DRIVE_TOKEN;
 
-  console.log('Environment variables check:');
-  console.log('- CLIENT_ID:', clientId ? 'Present' : 'Missing');
-  console.log('- CLIENT_SECRET:', clientSecret ? 'Present' : 'Missing');
-  console.log('- TOKEN:', token ? 'Present' : 'Missing');
-
   if (!clientId || !clientSecret || !token) {
     console.error('❌ Missing rclone environment variables');
     return false;
@@ -39,22 +34,16 @@ function setupRclone() {
       cleanToken = cleanToken.slice(1, -1);
     }
     
-    console.log('Cleaned token preview:', cleanToken.substring(0, 50) + '...');
-    
     // Check if it's already JSON
     if (cleanToken.startsWith('{') && cleanToken.endsWith('}')) {
       // Validate JSON
       const parsed = JSON.parse(cleanToken);
-      console.log('✅ Token is valid JSON');
-      console.log('Token expires:', parsed.expiry);
       
       // Check if token is expired
       const expiryDate = new Date(parsed.expiry);
       const now = new Date();
       if (expiryDate < now) {
         console.warn('⚠️ WARNING: Token appears to be expired!');
-        console.warn('Expiry:', expiryDate.toISOString());
-        console.warn('Now:   ', now.toISOString());
       }
       
       actualToken = cleanToken;
@@ -64,7 +53,6 @@ function setupRclone() {
     
   } catch (error) {
     console.error('❌ Token parsing failed:', error.message);
-    console.error('Raw token preview:', token.substring(0, 100));
     return false;
   }
 
@@ -82,24 +70,12 @@ team_drive =
   const configPath = path.join(configDir, 'rclone.conf');
   
   try {
-    console.log('📁 Creating config directory:', configDir);
     fs.ensureDirSync(configDir);
-    
-    console.log('📝 Writing config file:', configPath);
     fs.writeFileSync(configPath, configContent);
     
     // Verify file was created
     if (fs.existsSync(configPath)) {
-      const stats = fs.statSync(configPath);
       console.log('✅ Config file created successfully');
-      console.log('File size:', stats.size, 'bytes');
-      console.log('File permissions:', stats.mode.toString(8));
-      
-      // Show first few lines of config for verification
-      const configPreview = configContent.split('\n').slice(0, 6).join('\n');
-      console.log('Config preview:');
-      console.log(configPreview);
-      
       return true;
     } else {
       console.error('❌ Config file was not created');
@@ -108,7 +84,6 @@ team_drive =
     
   } catch (error) {
     console.error('❌ Failed to setup rclone config:', error);
-    console.error('Error details:', error.stack);
     return false;
   }
 }
@@ -140,10 +115,7 @@ router.post('/auto-upload/:username', async (req, res) => {
   const recordingsDir = path.join(__dirname, '../recordings');
   
   try {
-    console.log(`🔍 Checking for files to auto-upload for @${username}`);
-    
     const files = await fs.readdir(recordingsDir);
-    console.log(`📁 Found ${files.length} total files in recordings directory`);
     
     // Find MP4 files for this user that haven't been uploaded yet
     // Look for both .mp4 files (converted) and exclude _flv.mp4 files (being recorded)
@@ -154,17 +126,8 @@ router.post('/auto-upload/:username', async (req, res) => {
       const notInQueue = !uploadQueue.has(file);
       const notInHistory = !uploadHistory.has(file);
       
-      console.log(`📄 Checking file: ${file}`);
-      console.log(`  - For user: ${isForUser}`);
-      console.log(`  - Is MP4: ${isMp4}`);
-      console.log(`  - Not FLV: ${isNotFlv}`);
-      console.log(`  - Not in queue: ${notInQueue}`);
-      console.log(`  - Not in history: ${notInHistory}`);
-      
       return isForUser && isMp4 && isNotFlv && notInQueue && notInHistory;
     });
-
-    console.log(`✅ Found ${userMp4Files.length} files eligible for auto-upload: ${userMp4Files.join(', ')}`);
 
     if (userMp4Files.length === 0) {
       return res.json({ 
@@ -342,7 +305,7 @@ router.delete('/cancel/:filename', (req, res) => {
 
 // Start upload function
 function startUpload(filename, filePath, remotePath) {
-  console.log(`🚀 Starting upload: ${filename} -> ${remotePath}`);
+  console.log(`🚀 Starting upload: ${filename}`);
 
   // Verify file exists and get size
   if (!fs.existsSync(filePath)) {
@@ -361,7 +324,6 @@ function startUpload(filename, filePath, remotePath) {
   }
 
   const fileStats = fs.statSync(filePath);
-  console.log(`📊 File size: ${(fileStats.size / 1024 / 1024).toFixed(2)} MB`);
 
   const rcloneProcess = spawn('rclone', [
     'copy',
@@ -384,9 +346,6 @@ function startUpload(filename, filePath, remotePath) {
   // Handle progress output
   rcloneProcess.stderr.on('data', (data) => {
     const output = data.toString();
-    
-    // Log all rclone output for debugging
-    console.log(`[Upload ${filename}] ${output.trim()}`);
 
     // Parse progress (rclone outputs progress to stderr)
     const progressMatch = output.match(/(\d+)%/);
@@ -394,7 +353,6 @@ function startUpload(filename, filePath, remotePath) {
       const newProgress = parseInt(progressMatch[1]);
       if (newProgress !== uploadInfo.progress) {
         uploadInfo.progress = newProgress;
-        console.log(`📈 Upload progress for ${filename}: ${newProgress}%`);
       }
     }
 
@@ -405,14 +363,7 @@ function startUpload(filename, filePath, remotePath) {
     }
   });
 
-  rcloneProcess.stdout.on('data', (data) => {
-    const output = data.toString();
-    console.log(`[Upload ${filename}] STDOUT: ${output.trim()}`);
-  });
-
   rcloneProcess.on('close', (code) => {
-    console.log(`[Upload ${filename}] Process exited with code ${code}`);
-
     const uploadInfo = uploadQueue.get(filename);
     if (uploadInfo) {
       const uploadType = uploadInfo.isAutoUpload ? 'Auto-upload' : 'Manual upload';
@@ -431,8 +382,6 @@ function startUpload(filename, filePath, remotePath) {
 
       if (code === 0) {
         console.log(`✅ ${uploadType} completed successfully for ${filename}`);
-        // Optionally delete local file after successful upload
-        // fs.remove(filePath).catch(console.error);
       } else {
         console.error(`❌ ${uploadType} failed for ${filename} with code ${code}`);
       }
@@ -487,7 +436,6 @@ router.get('/test-config', (req, res) => {
   
   // First try to setup config
   const setupResult = setupRclone();
-  console.log('Setup result:', setupResult);
   
   if (!setupResult) {
     return res.status(500).json({ 
@@ -508,18 +456,14 @@ router.get('/test-config', (req, res) => {
   rcloneProcess.stdout.on('data', (data) => {
     const text = data.toString();
     output += text;
-    console.log('rclone stdout:', text);
   });
 
   rcloneProcess.stderr.on('data', (data) => {
     const text = data.toString();
     error += text;
-    console.log('rclone stderr:', text);
   });
 
   rcloneProcess.on('close', (code) => {
-    console.log('rclone process exited with code:', code);
-    
     if (code === 0) {
       res.json({ 
         success: true, 
@@ -538,7 +482,6 @@ router.get('/test-config', (req, res) => {
   });
 
   rcloneProcess.on('error', (err) => {
-    console.error('rclone process error:', err);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to run rclone command',
@@ -595,73 +538,6 @@ router.get('/debug/files/:username', async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
-  }
-});
-
-// Manual trigger for auto-upload (for testing)
-router.post('/debug/trigger-auto-upload/:username', async (req, res) => {
-  const { username } = req.params;
-  
-  console.log(`🔧 DEBUG: Manually triggering auto-upload for @${username}`);
-  
-  try {
-    // Call the auto-upload endpoint directly
-    const recordingsDir = path.join(__dirname, '../recordings');
-    const files = await fs.readdir(recordingsDir);
-    
-    // Find MP4 files for this user that haven't been uploaded yet
-    const userMp4Files = files.filter(file => {
-      const isForUser = file.includes(`TK_${username}_`);
-      const isMp4 = file.endsWith('.mp4');
-      const isNotFlv = !file.includes('_flv.mp4');
-      const notInQueue = !uploadQueue.has(file);
-      const notInHistory = !uploadHistory.has(file);
-      
-      return isForUser && isMp4 && isNotFlv && notInQueue && notInHistory;
-    });
-
-    if (userMp4Files.length === 0) {
-      return res.json({
-        success: true,
-        message: `No eligible files found for @${username}`,
-        filesFound: 0,
-        allFiles: files.filter(f => f.includes(`TK_${username}_`))
-      });
-    }
-
-    // Start uploads for all eligible files
-    const uploads = userMp4Files.map(filename => {
-      const filePath = path.join(recordingsDir, filename);
-      const remotePath = `drive:pop4u/tiktok-live-recorder/${username}/${filename}`;
-
-      uploadQueue.set(filename, {
-        status: 'uploading',
-        startTime: new Date(),
-        progress: 0,
-        remotePath,
-        username,
-        isAutoUpload: true
-      });
-
-      startUpload(filename, filePath, remotePath);
-      
-      return { filename, remotePath };
-    });
-
-    res.json({
-      success: true,
-      message: `Manual auto-upload started for @${username}: ${uploads.length} files`,
-      data: {
-        username,
-        filesFound: uploads.length,
-        uploads
-      }
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
   }
 });
 
