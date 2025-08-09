@@ -147,15 +147,23 @@ router.post('/upload-all', async (req, res) => {
   
   try {
     const files = await fs.readdir(recordingsDir);
+    
+    // Only get MP4 files (not FLV files that are still being processed)
     const mp4Files = files.filter(file => 
-      file.endsWith('.mp4') && !uploadQueue.has(file) && !uploadHistory.has(file)
+      file.endsWith('.mp4') && 
+      file.startsWith('TK_') &&
+      !uploadQueue.has(file) && 
+      !uploadHistory.has(file)
     );
 
     if (mp4Files.length === 0) {
-      return res.json({ message: 'No files to upload' });
+      return res.json({ 
+        message: 'No MP4 files available for upload. FLV files need to be converted first.',
+        flvFiles: files.filter(f => f.endsWith('.flv')).length
+      });
     }
 
-    // Start uploads for all files
+    // Start uploads for all MP4 files
     const uploads = mp4Files.map(filename => {
       const filePath = path.join(recordingsDir, filename);
       const match = filename.match(/TK_([^_]+)_/);
@@ -176,8 +184,9 @@ router.post('/upload-all', async (req, res) => {
     });
 
     res.json({ 
-      message: `Started uploading ${uploads.length} files`,
-      uploads
+      message: `Started uploading ${uploads.length} MP4 files`,
+      uploads,
+      skippedFlvFiles: files.filter(f => f.endsWith('.flv')).length
     });
   } catch (error) {
     console.error('Upload all error:', error);
