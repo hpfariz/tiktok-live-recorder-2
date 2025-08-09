@@ -6,6 +6,48 @@ const router = express.Router();
 
 const recordingsDir = path.join(__dirname, '../recordings');
 
+// Store active recording processes to track what's currently recording
+let activeRecordings = new Set(); // Set of filenames currently being recorded
+
+// Function to check if a process is actively recording a file
+function isActivelyRecording(filename) {
+  // Check if this file is in our active recordings set
+  if (activeRecordings.has(filename)) {
+    return true;
+  }
+
+  // Also check for .flv files that might still be converting
+  const flvVersion = filename.replace('.mp4', '_flv.mp4');
+  if (activeRecordings.has(flvVersion)) {
+    return true;
+  }
+
+  return false;
+}
+
+// API endpoint to mark files as actively recording (called by recorder)
+router.post('/mark-recording/:filename', (req, res) => {
+  const { filename } = req.params;
+  activeRecordings.add(filename);
+  console.log(`Marked ${filename} as actively recording`);
+  res.json({ success: true, message: `${filename} marked as recording` });
+});
+
+// API endpoint to mark files as finished recording (called by recorder)
+router.post('/mark-finished/:filename', (req, res) => {
+  const { filename } = req.params;
+  activeRecordings.delete(filename);
+  
+  // Also remove the .mp4 version if .flv finished
+  if (filename.includes('_flv.mp4')) {
+    const mp4Version = filename.replace('_flv.mp4', '.mp4');
+    activeRecordings.delete(mp4Version);
+  }
+  
+  console.log(`Marked ${filename} as finished recording`);
+  res.json({ success: true, message: `${filename} marked as finished` });
+});
+
 // Get all recorded files
 router.get('/', async (req, res) => {
   try {
