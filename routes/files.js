@@ -100,12 +100,24 @@ router.get('/', async (req, res) => {
         // Determine if file is currently being recorded
         let isCurrentlyRecording = false;
         
-        // First check our active recordings tracker
+        // First check our active recordings tracker (most reliable)
         if (isActivelyRecording(filename)) {
           isCurrentlyRecording = true;
+          console.log(`[STATUS] ${filename}: Marked as actively recording in tracker`);
         } else {
-          // For any file, check if it's being written to
-          isCurrentlyRecording = await isFileBeingWritten(filePath);
+          // Only check file writing if not in active recordings
+          // This prevents false positives after recording stops
+          const fileAge = Date.now() - stats.mtime.getTime();
+          
+          // If file is older than 2 minutes, don't bother checking if it's being written
+          if (fileAge > 120000) { // 2 minutes
+            isCurrentlyRecording = false;
+            console.log(`[STATUS] ${filename}: File too old (${Math.round(fileAge/1000)}s), marking as completed`);
+          } else {
+            // File is recent, check if it's being written
+            isCurrentlyRecording = await isFileBeingWritten(filePath);
+            console.log(`[STATUS] ${filename}: File age ${Math.round(fileAge/1000)}s, writing check: ${isCurrentlyRecording}`);
+          }
         }
 
         return {
@@ -248,80 +260,28 @@ async function isFileBeingWritten(filePath) {
   try {
     const stats1 = await fs.stat(filePath);
     
-    // Wait a bit longer for more accurate detection
-    await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
+    // Wait for changes
+    await new Promise(resolve => setTimeout(resolve, 3000)); // Wait 3 seconds
     
     const stats2 = await fs.stat(filePath);
     
-    // Check both size and modification time
+    // Check if size changed (most reliable indicator)
     const sizeChanged = stats1.size !== stats2.size;
-    const timeChanged = Math.abs(stats2.mtime.getTime() - stats1.mtime.getTime()) < 5000; // Modified within last 5 seconds
     
-    return sizeChanged || timeChanged;
-  } catch {
+    // Only consider modification time if size also changed
+    // This prevents false positives from system file access
+    const recentlyModified = (Date.now() - stats2.mtime.getTime()) < 10000; // Modified within last 10 seconds
+    
+    // File is being written if size changed OR (recently modified AND size > 0)
+    const isBeingWritten = sizeChanged || (recentlyModified && stats2.size > 0 && sizeChanged);
+    
+    console.log(`[FILE-CHECK] ${path.basename(filePath)}: size1=${stats1.size}, size2=${stats2.size}, sizeChanged=${sizeChanged}, recentlyModified=${recentlyModified}, result=${isBeingWritten}`);
+    
+    return isBeingWritten;
+  } catch (error) {
+    console.log(`[FILE-CHECK] Error checking ${path.basename(filePath)}:`, error.message);
     return false;
   }
 }
-
-// Debug endpoint to see what's happening with file tracking
-router.get('/debug/status', (req, res) => {
-  res.json({
-    activeRecordings: Array.from(activeRecordings),
-    recordingsCount: activeRecordings.size,
-    timestamp: new Date().toISOString()
-  });
-});
-
-// Get recent file operations log
-let fileOperationsLog = [];
-
-function logFileOperation(operation, filename, details = '') {
-  const logEntry = {
-    timestamp: new Date().toISOString(),
-    operation,
-    filename,
-    details
-  };
-  
-  fileOperationsLog.push(logEntry);
-  console.log(`[FILE-OP] ${operation}: ${filename} ${details}`);
-  
-  // Keep only last 100 operations
-  if (fileOperationsLog.length > 100) {
-    fileOperationsLog = fileOperationsLog.slice(-100);
-  }
-}
-
-// Update the existing mark-recording and mark-finished endpoints to include logging
-router.post('/mark-recording/:filename', (req, res) => {
-  const { filename } = req.params;
-  activeRecordings.add(filename);
-  logFileOperation('MARK_RECORDING', filename, 'File marked as actively recording');
-  res.json({ success: true, message: `${filename} marked as recording` });
-});
-
-router.post('/mark-finished/:filename', (req, res) => {
-  const { filename } = req.params;
-  activeRecordings.delete(filename);
-  
-  // Also remove the .mp4 version if .flv finished
-  if (filename.includes('_flv.mp4')) {
-    const mp4Version = filename.replace('_flv.mp4', '.mp4');
-    activeRecordings.delete(mp4Version);
-    logFileOperation('MARK_FINISHED', filename, `Also cleared ${mp4Version}`);
-  } else {
-    logFileOperation('MARK_FINISHED', filename, 'File marked as finished recording');
-  }
-  
-  res.json({ success: true, message: `${filename} marked as finished` });
-});
-
-// Endpoint to get file operations log
-router.get('/debug/operations', (req, res) => {
-  res.json({
-    operations: fileOperationsLog.slice(-50), // Last 50 operations
-    total: fileOperationsLog.length
-  });
-});
 
 module.exports = router;
