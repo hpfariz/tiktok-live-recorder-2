@@ -98,7 +98,7 @@ async function startAutoUpload(username) {
           try {
             const responseData = JSON.parse(data);
             if (res.statusCode === 200) {
-              console.log(`🔄 Auto-upload started for @${username}: ${responseData.message}`);
+              console.log(`🤖 Auto-upload started for @${username}: ${responseData.message}`);
             } else {
               console.log(`❌ Auto-upload failed for @${username}: ${responseData.error || 'Unknown error'}`);
             }
@@ -184,7 +184,7 @@ router.delete('/monitor/:username', (req, res) => {
   if (autoUploadTimers.has(username)) {
     clearTimeout(autoUploadTimers.get(username));
     autoUploadTimers.delete(username);
-    console.log(`Cancelled auto-upload timer for @${username}`);
+    console.log(`🚫 Cancelled auto-upload timer for @${username}`);
   }
   
   // Stop any active recording gracefully
@@ -284,7 +284,7 @@ router.delete('/cancel-auto-upload/:username', (req, res) => {
     clearTimeout(autoUploadTimers.get(username));
     autoUploadTimers.delete(username);
     
-    console.log(`Cancelled auto-upload timer for @${username}`);
+    console.log(`🚫 Cancelled auto-upload timer for @${username}`);
     res.json({ 
       success: true,
       message: `Auto-upload cancelled for @${username}` 
@@ -314,7 +314,7 @@ function startMonitoring(username, interval) {
     '--no-banner'
   ];
 
-  console.log(`Starting monitoring for @${username} with ${interval}min interval`);
+  console.log(`🎯 Starting monitoring for @${username} with ${interval}min interval`);
 
   const pythonProcess = spawn('python3', args, {
     cwd: path.join(__dirname, '../src'),
@@ -342,20 +342,32 @@ function startMonitoring(username, interval) {
       
       // Check if recording started
       if (log.includes('Started recording')) {
+        console.log(`🎬 Recording started for @${username}`);
         recording.status = 'recording';
         
         // Cancel any existing auto-upload timer since new recording started
         if (autoUploadTimers.has(username)) {
           clearTimeout(autoUploadTimers.get(username));
           autoUploadTimers.delete(username);
-          console.log(`Cancelled previous auto-upload timer for @${username} (new recording started)`);
+          console.log(`🚫 Cancelled previous auto-upload timer for @${username} (new recording started)`);
         }
         
-        // Extract filename from log - it should be the actual MP4 filename
-        const filenameMatch = log.match(/TK_[^_]+_[^_]+_[^.]+\.mp4/);
+        // Extract filename from log - look for the MP4 filename pattern
+        const filenameMatch = log.match(/TK_[^_]+_[^_]+_[^.]+\.mp4/) || 
+                             recording.logs.find(l => l.message.match(/TK_[^_]+_[^_]+_[^.]+\.mp4/))?.message.match(/TK_[^_]+_[^_]+_[^.]+\.mp4/);
+        
         if (filenameMatch) {
           recording.filename = filenameMatch[0];
-          console.log(`Recording started: ${recording.filename}`);
+          console.log(`📁 Recording filename: ${recording.filename}`);
+          
+          // Notify files API that recording started
+          notifyFileStatus(recording.filename, true);
+        } else {
+          // If we can't find the filename in the log, generate expected filename
+          const timestamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+/, '').replace('T', '_').slice(0, 15);
+          const expectedFilename = `TK_${username}_${timestamp}_flv.mp4`;
+          recording.filename = expectedFilename;
+          console.log(`📁 Generated filename: ${recording.filename}`);
           
           // Notify files API that recording started
           notifyFileStatus(recording.filename, true);
@@ -364,10 +376,11 @@ function startMonitoring(username, interval) {
       
       // Check if recording finished
       if (log.includes('Recording finished')) {
+        console.log(`🏁 Recording finished for @${username}`);
         recording.recordingEndTime = new Date();
         
         if (recording.filename) {
-          console.log(`Recording finished: ${recording.filename}`);
+          console.log(`📤 Processing finished recording: ${recording.filename}`);
           
           // Notify files API that recording finished
           notifyFileStatus(recording.filename, false);
@@ -389,7 +402,7 @@ function startMonitoring(username, interval) {
       
       // Check for conversion messages (but files are already MP4)
       if (log.includes('already in MP4 format') || log.includes('skipping conversion')) {
-        console.log(`File already in MP4 format, no conversion needed`);
+        console.log(`✅ File already in MP4 format, no conversion needed`);
       }
       
       // Check for actual conversion completion (if it happens)
@@ -397,7 +410,7 @@ function startMonitoring(username, interval) {
         const convertedMatch = log.match(/Finished converting (.*)/);
         if (convertedMatch) {
           const convertedFile = path.basename(convertedMatch[1]);
-          console.log(`Conversion completed for: ${convertedFile}`);
+          console.log(`🔄 Conversion completed for: ${convertedFile}`);
         }
       }
       
@@ -409,7 +422,7 @@ function startMonitoring(username, interval) {
   });
 
   pythonProcess.stderr.on('data', (data) => {
-    const log = data.toString();
+    const log = data.toString().trim();
     
     // Don't treat all stderr as errors - some are just info messages
     if (log.includes('[!]') || log.includes('ERROR') || log.includes('error:')) {
@@ -500,10 +513,10 @@ async function checkForCompletedRecordings(username) {
     );
     
     if (userMp4Files.length > 0) {
-      console.log(`Found ${userMp4Files.length} completed recordings for ${username}`);
+      console.log(`📁 Found ${userMp4Files.length} completed recordings for ${username}`);
     }
   } catch (error) {
-    console.error(`Error checking for completed recordings for ${username}:`, error);
+    console.error(`❌ Error checking for completed recordings for ${username}:`, error);
   }
 }
 
