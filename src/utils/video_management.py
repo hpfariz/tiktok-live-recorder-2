@@ -1,6 +1,6 @@
 import os
 import time
-import subprocess
+import shutil
 
 import ffmpeg
 
@@ -22,26 +22,6 @@ class VideoManagement:
             except PermissionError:
                 time.sleep(0.5)
         return False
-
-    @staticmethod
-    def check_ffmpeg_version():
-        """
-        Check FFmpeg version and return version info
-        """
-        try:
-            result = subprocess.run(['ffmpeg', '-version'], 
-                                  capture_output=True, text=True, timeout=10)
-            version_line = result.stdout.split('\n')[0]
-            # Extract version number
-            import re
-            version_match = re.search(r'ffmpeg version (\d+\.\d+)', version_line)
-            if version_match:
-                version = float(version_match.group(1))
-                return version, version_line
-            return None, version_line
-        except Exception as e:
-            logger.error(f"Could not check FFmpeg version: {e}")
-            return None, str(e)
 
     @staticmethod
     def convert_flv_to_mp4(file):
@@ -67,16 +47,8 @@ class VideoManagement:
             os.remove(file)  # Remove the source file
             return
 
-        # Check FFmpeg version
-        version, version_info = VideoManagement.check_ffmpeg_version()
-        logger.info(f"FFmpeg version: {version_info.split()[2] if version_info else 'Unknown'}")
-        
-        # If FFmpeg version is too old, try alternative conversion methods
-        if version and version < 4.4:
-            logger.warning("FFmpeg version may be too old for newer TikTok codecs. Trying alternative conversion...")
-            
         try:
-            # First, try the standard copy method
+            # First, try the standard copy method (fastest)
             try:
                 ffmpeg.input(file).output(
                     output_file,
