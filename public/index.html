@@ -658,18 +658,13 @@
                 let statusClass = 'completed';
                 
                 if (isRecording) {
-                    if (file.filename.includes('_flv.')) {
-                        statusText = 'Recording';
-                        statusClass = 'recording';
-                    } else {
-                        statusText = 'Converting';
-                        statusClass = 'recording';
-                    }
+                    statusText = 'Recording';
+                    statusClass = 'recording';
                 }
                 
-                // Don't show certain actions for files that are being processed
+                // Actions based on file state
                 const canDownload = !isRecording;
-                const canUpload = !isRecording && file.filename.endsWith('.mp4') && !file.filename.includes('_flv.');
+                const canUpload = !isRecording && file.filename.endsWith('.mp4');
                 const canDelete = !isRecording;
                 
                 return `
@@ -685,10 +680,6 @@
                             <div><strong>Size:</strong> ${file.sizeFormatted}</div>
                             <div><strong>Created:</strong> ${new Date(file.createdAt).toLocaleString()}</div>
                             <div><strong>Modified:</strong> ${new Date(file.modifiedAt).toLocaleString()}</div>
-                            ${file.filename.includes('_flv.') ? 
-                                '<div style="color: #f57c00;"><strong>Note:</strong> FLV source file (will be converted to MP4)</div>' : 
-                                ''
-                            }
                         </div>
                         <div class="item-actions">
                             ${canDownload ? `
@@ -708,7 +699,7 @@
                             ` : ''}
                             ${isRecording ? `
                                 <span style="color: #ff6b6b; font-style: italic;">
-                                    ${file.filename.includes('_flv.') ? 'Currently recording...' : 'Converting to MP4...'}
+                                    Currently recording...
                                 </span>
                             ` : ''}
                         </div>

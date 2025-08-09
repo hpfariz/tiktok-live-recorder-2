@@ -81,21 +81,9 @@ router.get('/', async (req, res) => {
         // First check our active recordings tracker
         if (isActivelyRecording(filename)) {
           isCurrentlyRecording = true;
-        } else if (filename.includes('_flv.')) {
-          // For .flv files, also check if file size is changing
-          isCurrentlyRecording = await isFileBeingWritten(filePath);
         } else {
-          // For .mp4 files, check if corresponding .flv file exists and is being written
-          const flvVersion = filename.replace('.mp4', '_flv.mp4');
-          const flvPath = path.join(recordingsDir, flvVersion);
-          
-          if (await fs.pathExists(flvPath)) {
-            // If .flv exists, .mp4 is not the active recording
-            isCurrentlyRecording = false;
-          } else {
-            // No .flv file, check if .mp4 is being written directly
-            isCurrentlyRecording = await isFileBeingWritten(filePath);
-          }
+          // For any file, check if it's being written to
+          isCurrentlyRecording = await isFileBeingWritten(filePath);
         }
 
         return {
