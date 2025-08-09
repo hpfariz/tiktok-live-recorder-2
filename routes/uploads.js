@@ -82,12 +82,33 @@ team_drive =
   const configPath = path.join(configDir, 'rclone.conf');
   
   try {
+    console.log('📁 Creating config directory:', configDir);
     fs.ensureDirSync(configDir);
+    
+    console.log('📝 Writing config file:', configPath);
     fs.writeFileSync(configPath, configContent);
-    console.log('✅ Rclone config created successfully');
-    return true;
+    
+    // Verify file was created
+    if (fs.existsSync(configPath)) {
+      const stats = fs.statSync(configPath);
+      console.log('✅ Config file created successfully');
+      console.log('File size:', stats.size, 'bytes');
+      console.log('File permissions:', stats.mode.toString(8));
+      
+      // Show first few lines of config for verification
+      const configPreview = configContent.split('\n').slice(0, 6).join('\n');
+      console.log('Config preview:');
+      console.log(configPreview);
+      
+      return true;
+    } else {
+      console.error('❌ Config file was not created');
+      return false;
+    }
+    
   } catch (error) {
     console.error('❌ Failed to setup rclone config:', error);
+    console.error('Error details:', error.stack);
     return false;
   }
 }
