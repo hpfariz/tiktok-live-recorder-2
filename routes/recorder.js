@@ -22,7 +22,7 @@ async function notifyFileStatus(filename, isRecording) {
       const postData = JSON.stringify({});
       
       const options = {
-        hostname: 'localhost',
+        hostname: '127.0.0.1', // Use IPv4 instead of 'localhost'
         port: port,
         path: apiPath,
         method: 'POST',
@@ -30,7 +30,8 @@ async function notifyFileStatus(filename, isRecording) {
           'Content-Type': 'application/json',
           'Content-Length': Buffer.byteLength(postData)
         },
-        timeout: 5000
+        timeout: 5000,
+        family: 4 // Force IPv4
       };
 
       const req = http.request(options, (res) => {
