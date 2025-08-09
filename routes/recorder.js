@@ -58,7 +58,8 @@ router.get('/monitored', (req, res) => {
   const users = Array.from(monitoredUsers.entries()).map(([username, info]) => ({
     username,
     ...info,
-    isRecording: activeRecordings.has(username) && activeRecordings.get(username).status === 'recording'
+    isRecording: activeRecordings.has(username) && activeRecordings.get(username).status === 'recording',
+    hasAutoUploadScheduled: autoUploadTimers.has(username)
   }));
   res.json(users);
 });
@@ -97,6 +98,13 @@ router.post('/monitor', (req, res) => {
 // Remove user from monitoring
 router.delete('/monitor/:username', (req, res) => {
   const { username } = req.params;
+  
+  // Cancel any pending auto-upload
+  if (autoUploadTimers.has(username)) {
+    clearTimeout(autoUploadTimers.get(username));
+    autoUploadTimers.delete(username);
+    console.log(`Cancelled auto-upload timer for @${username}`);
+  }
   
   // Stop any active recording gracefully
   if (activeRecordings.has(username)) {
@@ -156,7 +164,8 @@ router.get('/status/:username', (req, res) => {
       startTime: recording.startTime,
       status: recording.status,
       filename: recording.filename
-    } : null
+    } : null,
+    hasAutoUploadScheduled: autoUploadTimers.has(username)
   });
 });
 
@@ -170,6 +179,20 @@ router.get('/active', (req, res) => {
   }));
 
   res.json(activeList);
+});
+
+// Get auto-upload timers status
+router.get('/auto-upload-status', (req, res) => {
+  const timers = Array.from(autoUploadTimers.entries()).map(([username, timer]) => ({
+    username,
+    scheduled: true,
+    timerId: timer._idleTimeout // Approximate time remaining
+  }));
+
+  res.json({
+    scheduledUploads: timers,
+    count: autoUploadTimers.size
+  });
 });
 
 // Start monitoring function
@@ -362,8 +385,8 @@ router.get('/logs/:username', (req, res) => {
   });
 });
 
-// Helper function to check for completed recordings and auto-upload
-async function checkAndAutoUpload(username) {
+// Helper function to check for completed recordings
+async function checkForCompletedRecordings(username) {
   try {
     const recordingsDir = path.join(__dirname, '../recordings');
     const files = await fs.readdir(recordingsDir);
@@ -377,8 +400,6 @@ async function checkAndAutoUpload(username) {
     
     if (userMp4Files.length > 0) {
       console.log(`Found ${userMp4Files.length} completed recordings for ${username}`);
-      // Note: Auto-upload can be implemented later if needed
-      // For now, just log the available files
     }
   } catch (error) {
     console.error(`Error checking for completed recordings for ${username}:`, error);
