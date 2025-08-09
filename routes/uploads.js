@@ -93,6 +93,11 @@ router.post('/upload/:filename', async (req, res) => {
     return res.status(400).json({ error: 'File is already being uploaded' });
   }
 
+  // Only upload .mp4 files (not .flv files that are still being processed)
+  if (!filename.endsWith('.mp4')) {
+    return res.status(400).json({ error: 'Only MP4 files can be uploaded. Please wait for FLV to MP4 conversion to complete.' });
+  }
+
   // Extract username from filename for folder structure
   const match = filename.match(/TK_([^_]+)_/);
   const username = match ? match[1] : 'unknown';
