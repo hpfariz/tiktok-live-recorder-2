@@ -369,36 +369,58 @@ router.get('/test-config', (req, res) => {
   let error = '';
 
   rcloneProcess.stdout.on('data', (data) => {
-    output += data.toString();
+    const text = data.toString();
+    output += text;
+    console.log('rclone stdout:', text);
   });
 
   rcloneProcess.stderr.on('data', (data) => {
-    error += data.toString();
+    const text = data.toString();
+    error += text;
+    console.log('rclone stderr:', text);
   });
 
   rcloneProcess.on('close', (code) => {
+    console.log('rclone process exited with code:', code);
+    
     if (code === 0) {
       res.json({ 
         success: true, 
         message: 'Rclone configuration is working',
-        output 
+        output: output || 'No directories found (empty drive)' 
       });
     } else {
       res.status(500).json({ 
         success: false, 
         message: 'Rclone configuration failed',
-        error,
-        code 
+        error: error || 'Unknown error',
+        code,
+        setupResult 
       });
     }
   });
 
   rcloneProcess.on('error', (err) => {
+    console.error('rclone process error:', err);
     res.status(500).json({ 
       success: false, 
-      message: 'Failed to run rclone',
-      error: err.message 
+      message: 'Failed to run rclone command',
+      error: err.message,
+      setupResult 
     });
+  });
+});
+
+// Force recreate config endpoint for debugging
+router.post('/recreate-config', (req, res) => {
+  console.log('🔄 Force recreating rclone config...');
+  
+  const result = setupRclone();
+  
+  res.json({
+    success: result,
+    message: result ? 'Config recreated successfully' : 'Failed to recreate config',
+    timestamp: new Date().toISOString()
   });
 });
 
