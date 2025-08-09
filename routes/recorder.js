@@ -267,28 +267,16 @@ async function checkAndAutoUpload(username) {
     const recordingsDir = path.join(__dirname, '../recordings');
     const files = await fs.readdir(recordingsDir);
     
-    // Look for MP4 files for this user that aren't being uploaded
+    // Look for MP4 files for this user
     const userMp4Files = files.filter(file => 
       file.includes(`TK_${username}_`) && 
-      file.endsWith('.mp4') &&
-      !uploadQueue.has(file)
+      file.endsWith('.mp4')
     );
     
     if (userMp4Files.length > 0) {
-      console.log(`Found ${userMp4Files.length} completed recordings for ${username}, starting auto-upload`);
-      
-      for (const filename of userMp4Files) {
-        // Import upload functionality
-        const uploadsModule = require('./uploads');
-        
-        // Add to upload queue (similar to manual upload)
-        const filePath = path.join(recordingsDir, filename);
-        const remotePath = `drive:root/pop4u/tiktok-live-recorder/${username}/${filename}`;
-        
-        // Use the upload system from uploads.js
-        // This is a simple way to trigger upload without duplicating code
-        console.log(`Auto-uploading ${filename} for ${username}`);
-      }
+      console.log(`Found ${userMp4Files.length} completed recordings for ${username}`);
+      // Note: Auto-upload can be implemented later if needed
+      // For now, just log the available files
     }
   } catch (error) {
     console.error(`Error checking for completed recordings for ${username}:`, error);
