@@ -16,9 +16,11 @@ RUN curl https://rclone.org/install.sh | bash
 # Set working directory
 WORKDIR /app
 
-# Copy and install Node.js dependencies first (better caching)
-COPY package.json ./
-RUN npm ci --only=production
+# Copy package files for better caching
+COPY package.json package-lock.json* ./
+
+# Install Node.js dependencies
+RUN npm install --omit=dev
 
 # Copy and install Python dependencies with optimizations
 COPY requirements.txt ./
