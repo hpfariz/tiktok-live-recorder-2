@@ -813,12 +813,18 @@
                     <div class="upload-item uploading">
                         <div class="item-header">
                             <div class="item-title">${upload.filename}</div>
-                            <span class="status-badge status-uploading">Uploading</span>
+                            <span class="status-badge status-uploading">
+                                ${upload.isAutoUpload ? '🤖 Auto-Uploading' : 'Uploading'}
+                            </span>
                         </div>
                         <div class="item-details">
                             <div><strong>User:</strong> @${upload.username}</div>
                             <div><strong>Started:</strong> ${new Date(upload.startTime).toLocaleString()}</div>
                             <div><strong>Destination:</strong> ${upload.remotePath}</div>
+                            ${upload.isAutoUpload ? 
+                                '<div style="color: #2e7d32;"><strong>Type:</strong> Automatic upload (triggered 5 min after recording)</div>' : 
+                                '<div style="color: #1976d2;"><strong>Type:</strong> Manual upload</div>'
+                            }
                         </div>
                         <div class="progress-bar">
                             <div class="progress-fill" style="width: ${upload.progress || 0}%"></div>
@@ -845,6 +851,7 @@
                             <div class="item-title">${upload.filename}</div>
                             <span class="status-badge status-${upload.status}">
                                 ${upload.status.charAt(0).toUpperCase() + upload.status.slice(1)}
+                                ${upload.isAutoUpload ? ' (Auto)' : ''}
                             </span>
                         </div>
                         <div class="item-details">
@@ -852,6 +859,10 @@
                             <div><strong>Started:</strong> ${new Date(upload.startTime).toLocaleString()}</div>
                             <div><strong>Completed:</strong> ${new Date(upload.completedAt).toLocaleString()}</div>
                             <div><strong>Destination:</strong> ${upload.remotePath}</div>
+                            ${upload.isAutoUpload ? 
+                                '<div style="color: #2e7d32;"><strong>Type:</strong> Automatic upload</div>' : 
+                                '<div style="color: #1976d2;"><strong>Type:</strong> Manual upload</div>'
+                            }
                             ${upload.error ? `<div style="color: #d32f2f;"><strong>Error:</strong> ${upload.error}</div>` : ''}
                         </div>
                     </div>

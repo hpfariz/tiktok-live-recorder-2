@@ -217,7 +217,7 @@ router.post('/upload/:filename', async (req, res) => {
   const match = filename.match(/TK_([^_]+)_/);
   const username = match ? match[1] : 'unknown';
   
-  const remotePath = `drive:pop4u/tiktok-live-recorder/${username}/${filename}`;
+  const remotePath = `drive:root/pop4u/tiktok-live-recorder/${username}/${filename}`;
 
   // Add to upload queue
   uploadQueue.set(filename, {
@@ -225,7 +225,8 @@ router.post('/upload/:filename', async (req, res) => {
     startTime: new Date(),
     progress: 0,
     remotePath,
-    username
+    username,
+    isAutoUpload: false // Manual upload
   });
 
   res.json({ 
@@ -265,14 +266,15 @@ router.post('/upload-all', async (req, res) => {
       const filePath = path.join(recordingsDir, filename);
       const match = filename.match(/TK_([^_]+)_/);
       const username = match ? match[1] : 'unknown';
-      const remotePath = `drive:pop4u/tiktok-live-recorder/${username}/${filename}`;
+      const remotePath = `drive:root/pop4u/tiktok-live-recorder/${username}/${filename}`;
 
       uploadQueue.set(filename, {
         status: 'uploading',
         startTime: new Date(),
         progress: 0,
         remotePath,
-        username
+        username,
+        isAutoUpload: false // Manual bulk upload
       });
 
       startUpload(filename, filePath, remotePath);
@@ -353,6 +355,8 @@ function startUpload(filename, filePath, remotePath) {
 
     const uploadInfo = uploadQueue.get(filename);
     if (uploadInfo) {
+      const uploadType = uploadInfo.isAutoUpload ? 'Auto-upload' : 'Manual upload';
+      
       // Move to history
       uploadHistory.set(filename, {
         ...uploadInfo,
@@ -366,11 +370,11 @@ function startUpload(filename, filePath, remotePath) {
 
       // If upload successful and auto-delete is enabled, delete local file
       if (code === 0) {
-        console.log(`Upload completed successfully for ${filename}`);
+        console.log(`${uploadType} completed successfully for ${filename}`);
         // Optionally delete local file after successful upload
         // fs.remove(filePath).catch(console.error);
       } else {
-        console.error(`Upload failed for ${filename} with code ${code}`);
+        console.error(`${uploadType} failed for ${filename} with code ${code}`);
       }
     }
   });
