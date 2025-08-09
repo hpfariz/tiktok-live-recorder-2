@@ -22,7 +22,7 @@ async function notifyFileStatus(filename, isRecording) {
       const postData = JSON.stringify({});
       
       const options = {
-        hostname: '127.0.0.1', // Use IPv4 instead of 'localhost'
+        hostname: '127.0.0.1',
         port: port,
         path: apiPath,
         method: 'POST',
@@ -31,7 +31,7 @@ async function notifyFileStatus(filename, isRecording) {
           'Content-Length': Buffer.byteLength(postData)
         },
         timeout: 5000,
-        family: 4 // Force IPv4
+        family: 4
       };
 
       const req = http.request(options, (res) => {
@@ -41,22 +41,15 @@ async function notifyFileStatus(filename, isRecording) {
         });
         
         res.on('end', () => {
-          if (res.statusCode === 200) {
-            console.log(`✅ Successfully notified: ${filename} ${isRecording ? 'started' : 'finished'}`);
-          } else {
-            console.log(`❌ Failed to notify file status for ${filename}: HTTP ${res.statusCode}`);
-          }
           resolve();
         });
       });
 
       req.on('error', (error) => {
-        console.log(`❌ Error notifying file status for ${filename}:`, error.message);
         resolve();
       });
 
       req.on('timeout', () => {
-        console.log(`❌ Timeout notifying file status for ${filename}`);
         req.destroy();
         resolve();
       });
@@ -64,7 +57,6 @@ async function notifyFileStatus(filename, isRecording) {
       req.write(postData);
       req.end();
     } catch (error) {
-      console.log(`❌ Error notifying file status for ${filename}:`, error.message);
       resolve();
     }
   });
@@ -80,7 +72,7 @@ async function startAutoUpload(username) {
       const postData = JSON.stringify({});
       
       const options = {
-        hostname: '127.0.0.1', // Use IPv4 instead of 'localhost'
+        hostname: '127.0.0.1',
         port: port,
         path: apiPath,
         method: 'POST',
@@ -89,7 +81,7 @@ async function startAutoUpload(username) {
           'Content-Length': Buffer.byteLength(postData)
         },
         timeout: 10000,
-        family: 4 // Force IPv4
+        family: 4
       };
 
       const req = http.request(options, (res) => {
@@ -103,23 +95,19 @@ async function startAutoUpload(username) {
             const responseData = JSON.parse(data);
             if (res.statusCode === 200) {
               console.log(`🤖 Auto-upload started for @${username}: ${responseData.message}`);
-            } else {
-              console.log(`❌ Auto-upload failed for @${username}: ${responseData.error || 'Unknown error'}`);
             }
           } catch (parseError) {
-            console.log(`❌ Auto-upload response parse error for @${username}:`, parseError.message);
+            // Silent failure
           }
           resolve();
         });
       });
 
       req.on('error', (error) => {
-        console.error(`❌ Error starting auto-upload for @${username}:`, error.message);
         resolve();
       });
 
       req.on('timeout', () => {
-        console.log(`❌ Timeout starting auto-upload for @${username}`);
         req.destroy();
         resolve();
       });
@@ -127,7 +115,6 @@ async function startAutoUpload(username) {
       req.write(postData);
       req.end();
     } catch (error) {
-      console.error(`❌ Error starting auto-upload for @${username}:`, error.message);
       resolve();
     }
   });
