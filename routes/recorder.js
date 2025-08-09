@@ -333,7 +333,7 @@ function startMonitoring(username, interval) {
 
   // Handle process output
   pythonProcess.stdout.on('data', (data) => {
-    const log = data.toString();
+    const log = data.toString().trim();
     console.log(`[${username}] INFO: ${log}`);
     
     const recording = activeRecordings.get(username);
