@@ -125,8 +125,15 @@ def main():
 
 
 if __name__ == "__main__":
-    # Don't print banner when run by web interface
-    if "--no-banner" not in sys.argv:
+    # Check if --no-banner flag is present
+    show_banner = "--no-banner" not in sys.argv
+    
+    # Remove --no-banner from sys.argv so it doesn't interfere with argparse
+    if "--no-banner" in sys.argv:
+        sys.argv.remove("--no-banner")
+    
+    # print the banner only if not suppressed
+    if show_banner:
         from utils.utils import banner
         banner()
 
