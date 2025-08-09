@@ -80,7 +80,7 @@ async function startAutoUpload(username) {
       const postData = JSON.stringify({});
       
       const options = {
-        hostname: 'localhost',
+        hostname: '127.0.0.1', // Use IPv4 instead of 'localhost'
         port: port,
         path: apiPath,
         method: 'POST',
@@ -88,7 +88,8 @@ async function startAutoUpload(username) {
           'Content-Type': 'application/json',
           'Content-Length': Buffer.byteLength(postData)
         },
-        timeout: 10000
+        timeout: 10000,
+        family: 4 // Force IPv4
       };
 
       const req = http.request(options, (res) => {
