@@ -241,4 +241,65 @@ async function isFileBeingWritten(filePath) {
   }
 }
 
+// Debug endpoint to see what's happening with file tracking
+router.get('/debug/status', (req, res) => {
+  res.json({
+    activeRecordings: Array.from(activeRecordings),
+    recordingsCount: activeRecordings.size,
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Get recent file operations log
+let fileOperationsLog = [];
+
+function logFileOperation(operation, filename, details = '') {
+  const logEntry = {
+    timestamp: new Date().toISOString(),
+    operation,
+    filename,
+    details
+  };
+  
+  fileOperationsLog.push(logEntry);
+  console.log(`[FILE-OP] ${operation}: ${filename} ${details}`);
+  
+  // Keep only last 100 operations
+  if (fileOperationsLog.length > 100) {
+    fileOperationsLog = fileOperationsLog.slice(-100);
+  }
+}
+
+// Update the existing mark-recording and mark-finished endpoints to include logging
+router.post('/mark-recording/:filename', (req, res) => {
+  const { filename } = req.params;
+  activeRecordings.add(filename);
+  logFileOperation('MARK_RECORDING', filename, 'File marked as actively recording');
+  res.json({ success: true, message: `${filename} marked as recording` });
+});
+
+router.post('/mark-finished/:filename', (req, res) => {
+  const { filename } = req.params;
+  activeRecordings.delete(filename);
+  
+  // Also remove the .mp4 version if .flv finished
+  if (filename.includes('_flv.mp4')) {
+    const mp4Version = filename.replace('_flv.mp4', '.mp4');
+    activeRecordings.delete(mp4Version);
+    logFileOperation('MARK_FINISHED', filename, `Also cleared ${mp4Version}`);
+  } else {
+    logFileOperation('MARK_FINISHED', filename, 'File marked as finished recording');
+  }
+  
+  res.json({ success: true, message: `${filename} marked as finished` });
+});
+
+// Endpoint to get file operations log
+router.get('/debug/operations', (req, res) => {
+  res.json({
+    operations: fileOperationsLog.slice(-50), // Last 50 operations
+    total: fileOperationsLog.length
+  });
+});
+
 module.exports = router;
