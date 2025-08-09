@@ -1,36 +1,38 @@
 # Use Node.js as base image since we need both Node and Python
 FROM node:18-bullseye
 
-# Install Python and FFmpeg
+# Install Python, FFmpeg, and rclone
 RUN apt-get update && apt-get install -y \
     python3 \
     python3-pip \
     ffmpeg \
+    curl \
     && rm -rf /var/lib/apt/lists/*
+
+# Install rclone
+RUN curl https://rclone.org/install.sh | bash
 
 # Set working directory
 WORKDIR /app
 
-# Copy all files
-COPY . .
+# Copy package files first for better caching
+COPY package.json ./
+COPY requirements.txt ./
 
-# Install Python dependencies
-WORKDIR /app/src
-RUN pip3 install -r requirements.txt
-
-# Install backend dependencies
-WORKDIR /app/backend
+# Install Node.js dependencies
 RUN npm install
 
-# Install frontend dependencies and build
-WORKDIR /app/frontend
-RUN npm install && npm run build
+# Install Python dependencies
+RUN pip3 install -r requirements.txt
 
-# Set working directory back to backend for running
-WORKDIR /app/backend
+# Copy all source files
+COPY . .
+
+# Create recordings directory
+RUN mkdir -p recordings
 
 # Expose port
-EXPOSE 3001
+EXPOSE 3000
 
 # Set environment to production
 ENV NODE_ENV=production
