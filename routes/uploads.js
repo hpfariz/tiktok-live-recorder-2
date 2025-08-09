@@ -561,4 +561,41 @@ router.post('/recreate-config', (req, res) => {
   });
 });
 
+// Debug endpoint to list files and their status
+router.get('/debug/files/:username', async (req, res) => {
+  const { username } = req.params;
+  const recordingsDir = path.join(__dirname, '../recordings');
+  
+  try {
+    const files = await fs.readdir(recordingsDir);
+    const userFiles = files.filter(f => f.includes(`TK_${username}_`));
+    
+    const fileDetails = await Promise.all(userFiles.map(async (filename) => {
+      const filePath = path.join(recordingsDir, filename);
+      const stats = await fs.stat(filePath);
+      
+      return {
+        filename,
+        size: stats.size,
+        sizeFormatted: `${(stats.size / 1024 / 1024).toFixed(2)} MB`,
+        modified: stats.mtime,
+        isFlv: filename.includes('_flv.mp4'),
+        isMp4: filename.endsWith('.mp4') && !filename.includes('_flv.mp4'),
+        inUploadQueue: uploadQueue.has(filename),
+        inUploadHistory: uploadHistory.has(filename)
+      };
+    }));
+    
+    res.json({
+      username,
+      totalFiles: userFiles.length,
+      files: fileDetails,
+      uploadQueue: Array.from(uploadQueue.keys()).filter(f => f.includes(`TK_${username}_`)),
+      uploadHistory: Array.from(uploadHistory.keys()).filter(f => f.includes(`TK_${username}_`))
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 module.exports = router;
