@@ -1,126 +1,135 @@
-<div align="center">
+# TikTok Live Recorder - Web Interface
 
-<h1> TikTok Live Recorder🎥</h1>
+A web-based interface for the TikTok Live Recorder that allows you to manage recordings through a browser.
 
-<em>TikTok Live Recorder is a tool for recording live streaming tiktok.</em>
+## Features
 
-[![Telegram](https://img.shields.io/badge/Telegram-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/tiktokliverecorder)
-![Python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54) 
-[![Licence](https://img.shields.io/github/license/Ileriayo/markdown-badges?style=for-the-badge)](./LICENSE)
+- **Web Interface**: Easy-to-use web dashboard
+- **Automatic Recording**: Set username and interval for automatic monitoring
+- **Real-time Status**: View active recordings and their status
+- **Start/Stop Control**: Start and stop recordings from the web interface
+- **No Update Check**: Automatically runs with `--no-update-check` flag
+- **Deploy Ready**: Configured for Render free tier deployment
 
-The TikTok Live Recorder is a tool designed to easily capture and save live streaming sessions from TikTok. It records both audio and video, allowing users to revisit and preserve engaging live content for later enjoyment and analysis. It's a valuable resource for creators, researchers, and anyone who wants to capture memorable moments from TikTok live streams.
+## Project Structure
 
-<img src="https://i.ibb.co/YTHp5DT/image.png" alt="image" border="0">
+```
+tiktok-live-recorder/
+├── backend/           # Node.js Express server
+├── frontend/          # React web interface
+├── src/              # Original Python recorder code
+├── package.json      # Root package.json
+├── render.yaml       # Render deployment config
+└── setup.sh          # Local setup script
+```
 
-</div>
+## Local Development Setup
 
-<div align="left">
+1. **Prerequisites**
+   - Node.js (v14 or higher)
+   - Python3 (v3.8 or higher)
+   - FFmpeg
 
+2. **Quick Setup**
+   ```bash
+   chmod +x setup.sh
+   ./setup.sh
+   ```
 
-  <h1> How To Use </h1>
+3. **Manual Setup**
+   ```bash
+   # Install Python dependencies
+   cd src && pip3 install -r requirements.txt
 
-- [Install on Windows & Linux 💻](#install-on-windows-)
-- [Install on Linux 💻](#install-on-linux-)
-- [Install on Android 📱](#install-on-android-)
+   # Install backend dependencies
+   cd ../backend && npm install
 
-</div>
+   # Install frontend dependencies
+   cd ../frontend && npm install
+   ```
 
-## Install on Windows 💻
+4. **Development Mode**
+   ```bash
+   # Terminal 1: Start backend
+   cd backend && npm run dev
 
-To clone and run this application, you'll need [Git](https://git-scm.com) and [Python3](https://www.python.org/downloads/) and [FFmpeg](https://www.youtube.com/watch?v=OlNWCpFdVMA) installed on your computer. From your command line:
+   # Terminal 2: Start frontend
+   cd frontend && npm start
+   ```
 
-<!-- <img src="https://i.ibb.co/8DkzXZn/image.png" alt="image" border="0"> -->
+5. **Production Mode**
+   ```bash
+   # Build frontend
+   cd frontend && npm run build
 
-<be>
+   # Start production server
+   cd ../backend && npm start
+   ```
 
-</div>
+## Deployment to Render
 
-  ```bash
-# Clone this repository
-$ git clone https://github.com/Michele0303/tiktok-live-recorder
-# Go into the repository
-$ cd tiktok-live-recorder
-# Go into the source code
-$ cd src
-# Install dependencies
-$ pip install -r requirements.txt
-# Run the app on windows
-$ python main.py -h
-  ```
+1. **Connect Repository**: Connect your GitHub repository to Render
 
-## Install on Linux 🐧
+2. **Configuration**: The `render.yaml` file is already configured for deployment
 
-To clone and run this application, you'll need [Git](https://git-scm.com) and [Python3](https://www.python.org/downloads/) and [FFmpeg](https://ffmpeg.org/download.html#build-linux) installed on your computer. From your command line:
+3. **Environment Variables**: No additional environment variables needed
 
-<!-- <img src="https://i.ibb.co/8DkzXZn/image.png" alt="image" border="0"> -->
+4. **Deploy**: Render will automatically build and deploy your application
 
-<be>
+## Configuration
 
-</div>
+Before using the recorder, make sure to configure:
 
-  ```bash
-# Clone this repository
-$ git clone https://github.com/Michele0303/tiktok-live-recorder
-# Go into the repository
-$ cd tiktok-live-recorder
-# Go into the source code
-$ cd src
-# Install dependencies
-$ pip install -r requirements.txt --break-system-packages
-# Run the app on linux
-$ python3 main.py -h
-  ```
+1. **cookies.json** (in src/ directory)
+   - Required for accessing TikTok content
+   - See [GUIDE.md](GUIDE.md) for setup instructions
 
-## Install on Android 📱
+2. **telegram.json** (in src/ directory)
+   - Optional: for uploading recorded videos to Telegram
+   - See [GUIDE.md](GUIDE.md) for setup instructions
 
-<b>Install Termux from F-Droid:</b> <a href="https://f-droid.org/packages/com.termux/">HERE</a> - Avoid installing from Play Store to prevent potential issues.
+## Usage
 
-From termux command line:
+1. **Access the Web Interface**
+   - Local: http://localhost:3001 (development) or http://localhost:3001 (production)
+   - Render: Your app's Render URL
 
-<be>
+2. **Start Recording**
+   - Enter TikTok username (without @)
+   - Set check interval (in minutes)
+   - Click "Start Recording"
 
-</div>
+3. **Monitor Recordings**
+   - View active recordings in real-time
+   - See recording status and timestamps
+   - Stop recordings when needed
 
-  ```bash
-# Update packages
-$ pkg update
-$ pkg upgrade
-# Install git, python3, ffmpeg
-$ pkg install git python3 ffmpeg
-# Clone this repository
-$ git clone https://github.com/Michele0303/tiktok-live-recorder
-# Go into the repository
-$ cd tiktok-live-recorder
-# Go into the source code
-$ cd src
-# Install dependencies
-$ pip install -r requirements.txt --break-system-packages
-# Run the app
-$ python main.py -h
-  ```
+## API Endpoints
 
-<div align="left">
+- `POST /api/start-recording` - Start a new recording
+- `POST /api/stop-recording` - Stop an active recording
+- `GET /api/active` - Get all active recordings
+- `GET /api/status/:username` - Get status for specific user
+- `GET /api/logs/:username` - Get logs for specific recording
 
-## Guide
+## Features
 
-- <a href="https://github.com/Michele0303/tiktok-live-recorder/blob/main/GUIDE.md#how-to-set-cookies">How to set cookies in cookies.json</a> 
-- <a href="https://github.com/Michele0303/tiktok-live-recorder/blob/main/GUIDE.md#how-to-get-room_id">How to get room_id</a> 
-- <a href="https://github.com/Michele0303/tiktok-live-recorder/blob/main/GUIDE.md#how-to-enable-upload-to-telegram">How to enable upload to telegram</a> 
+- **Automatic Mode**: Always runs in automatic mode with no update checks
+- **Multi-user Support**: Record multiple users simultaneously
+- **Real-time Updates**: Status updates every 5 seconds
+- **Error Handling**: Graceful error handling and user feedback
+- **Responsive Design**: Works on desktop and mobile devices
 
-## To-Do List 🔮
+## Troubleshooting
 
-- [x] <b>Automatic Recording</b>: Enable automatic recording of live TikTok sessions.
-- [x] <b>Authentication:</b> Added support for cookies-based authentication.
-- [x] <b>Recording by room_id:</b> Allow recording by providing the room ID.
-- [x] <b>Recording by TikTok live URL:</b> Enable recording by directly using the TikTok live URL.
-- [x] <b>Using a Proxy to Bypass Login Restrictions:</b> Implement the ability to use an HTTP proxy to bypass login restrictions in some countries (only to obtain the room ID).
-- [x] <b>Implement a Logging System:</b> Set up a comprehensive logging system to track activities and errors.
-- [x] <b>Implement Auto-Update Feature:</b> Create a system that automatically checks for new releases.
-- [x] <b>Send Recorded Live Streams to Telegram:</b> Enable the option to send recorded live streams directly to Telegram.
-- [ ] <b>Save Chat in a File:</b> Allow saving the chat from live streams in a file.
-- [ ] <b>Support for M3U8:</b> Add support for recording live streams via m3u8 format.
-- [ ] <b>Watchlist Feature:</b> Implement a watchlist to monitor multiple users simultaneously (while respecting TikTok's limitations).
+1. **Python Dependencies**: Ensure all Python packages are installed
+2. **FFmpeg**: Required for video processing
+3. **Cookies**: Make sure cookies.json is properly configured
+4. **Permissions**: Ensure the application has write permissions for output directory
 
-## Legal ⚖️
+## Notes
 
-This code is in no way affiliated with, authorized, maintained, sponsored or endorsed by TikTok or any of its affiliates or subsidiaries. Use at your own risk.
+- The web interface automatically adds the `--no-update-check` flag
+- All recordings are saved in the default output directory
+- The interface shows real-time status of recording processes
+- Logs are available through the API for debugging
