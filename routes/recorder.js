@@ -327,7 +327,8 @@ async function checkAndAutoUpload(username) {
     // Look for MP4 files for this user
     const userMp4Files = files.filter(file => 
       file.includes(`TK_${username}_`) && 
-      file.endsWith('.mp4')
+      file.endsWith('.mp4') &&
+      !file.includes('_flv.')
     );
     
     if (userMp4Files.length > 0) {
