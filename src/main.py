@@ -60,12 +60,12 @@ def run_recordings(args, mode, cookies):
             for p in processes:
                 p.join()
         except KeyboardInterrupt:
-            print("\n[!] Ctrl-C detected.")
+            print("\n[!] Ctrl-C detected.", flush=True)
             try:
                 for p in processes:
                     p.join()
             except KeyboardInterrupt:
-                print("\n[!] Forcefully terminating all processes.")
+                print("\n[!] Forcefully terminating all processes.", flush=True)
                 for p in processes:
                     if p.is_alive():
                         p.terminate()
