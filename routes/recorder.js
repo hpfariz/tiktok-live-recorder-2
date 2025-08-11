@@ -301,6 +301,7 @@ function startMonitoring(username, interval) {
   fs.ensureDirSync(recordingsDir);
   
   const args = [
+    '-u', // IMPORTANT: Unbuffered Python output
     pythonScriptPath,
     '-user', username,
     '-mode', 'automatic',
@@ -310,11 +311,18 @@ function startMonitoring(username, interval) {
     '--no-banner'
   ];
 
-  console.log(`🎯 Starting monitoring for @${username} with ${interval}min interval`);
+  console.log(`🎯 Starting monitoring for @${username} with ${interval} min interval`);
+
+  // Set up environment to ensure Python output is unbuffered
+  const env = Object.assign({}, process.env, {
+    PYTHONUNBUFFERED: '1',
+    PYTHONDONTWRITEBYTECODE: '1'
+  });
 
   const pythonProcess = spawn('python3', args, {
     cwd: path.join(__dirname, '../src'),
-    stdio: ['pipe', 'pipe', 'pipe']
+    stdio: ['pipe', 'pipe', 'pipe'],
+    env: env
   });
 
   // Store the process
@@ -324,113 +332,149 @@ function startMonitoring(username, interval) {
     status: 'monitoring',
     logs: [],
     filename: null,
-    recordingEndTime: null
+    recordingEndTime: null,
+    lastHeartbeat: new Date()
   });
 
-  // Handle process output
-  pythonProcess.stdout.on('data', (data) => {
-    const log = data.toString().trim();
-    console.log(`[${username}] ${log}`);
-    
+  // Set up a heartbeat to track if process is still alive
+  const heartbeatInterval = setInterval(() => {
     const recording = activeRecordings.get(username);
-    if (recording) {
-      recording.logs.push({ type: 'info', message: log, timestamp: new Date() });
-      
-      // Check if recording started
-      if (log.includes('Started recording')) {
-        console.log(`🎬 Recording started for @${username}`);
-        recording.status = 'recording';
-        
-        // Cancel any existing auto-upload timer since new recording started
-        if (autoUploadTimers.has(username)) {
-          clearTimeout(autoUploadTimers.get(username));
-          autoUploadTimers.delete(username);
-        }
-        
-        // Extract filename from log - look for the FLV filename pattern
-        const filenameMatch = log.match(/TK_[^_]+_[^_]+_[^.]+_flv\.mp4/);
-        
-        if (filenameMatch) {
-          recording.filename = filenameMatch[0];
-          console.log(`📁 Recording filename: ${recording.filename}`);
-          
-          // Notify files API that recording started
-          notifyFileStatus(recording.filename, true);
-        } else {
-          // If we can't find the filename in the log, generate expected filename
-          const timestamp = new Date().toISOString()
-            .replace(/[-:]/g, '')
-            .replace(/\..+/, '')
-            .replace('T', '_')
-            .slice(0, 15);
-          const expectedFilename = `TK_${username}_${timestamp}_flv.mp4`;
-          recording.filename = expectedFilename;
-          
-          // Notify files API that recording started
-          notifyFileStatus(recording.filename, true);
-        }
-      }
-      
-      // Check if recording finished
-      if (log.includes('Recording finished')) {
-        console.log(`🏁 Recording finished for @${username}`);
-        recording.recordingEndTime = new Date();
-        
-        if (recording.filename) {
-          // Notify files API that recording finished
-          notifyFileStatus(recording.filename, false);
-        }
-        
-        recording.status = 'monitoring';
-        recording.filename = null;
-      }
-      
-      // Check for conversion completion
-      if (log.includes('Finished converting') || log.includes('already in MP4 format') || log.includes('skipping conversion')) {
-        console.log(`✅ Conversion process completed for @${username}`);
-        
-        // Start auto-upload immediately instead of waiting 5 minutes
-        setTimeout(() => {
-          console.log(`⏰ Auto-upload starting now for @${username}`);
-          startAutoUpload(username);
-        }, 10000); // Wait just 10 seconds to ensure file is fully written
-      }
-      
-      // Keep only last 50 logs
-      if (recording.logs.length > 50) {
-        recording.logs = recording.logs.slice(-50);
-      }
+    if (recording && recording.process && !recording.process.killed) {
+      recording.lastHeartbeat = new Date();
+    } else {
+      clearInterval(heartbeatInterval);
     }
+  }, 30000); // Every 30 seconds
+
+  // Handle process output with immediate logging
+  pythonProcess.stdout.on('data', (data) => {
+    const lines = data.toString().split('\n').filter(line => line.trim());
+    
+    lines.forEach(log => {
+      if (!log.trim()) return;
+      
+      // Immediately log to console for Render visibility
+      console.log(`[${username}] ${log}`);
+      
+      const recording = activeRecordings.get(username);
+      if (recording) {
+        recording.logs.push({ type: 'info', message: log, timestamp: new Date() });
+        
+        // Check if recording started
+        if (log.includes('Started recording')) {
+          console.log(`🎬 Recording started for @${username}`);
+          recording.status = 'recording';
+          
+          // Cancel any existing auto-upload timer since new recording started
+          if (autoUploadTimers.has(username)) {
+            clearTimeout(autoUploadTimers.get(username));
+            autoUploadTimers.delete(username);
+          }
+          
+          // Extract filename from log - look for the FLV filename pattern
+          const filenameMatch = log.match(/TK_[^_]+_[^_]+_[^.]+_flv\.mp4/);
+          
+          if (filenameMatch) {
+            recording.filename = filenameMatch[0];
+            console.log(`📁 Recording filename: ${recording.filename}`);
+            
+            // Notify files API that recording started
+            notifyFileStatus(recording.filename, true);
+          } else {
+            // If we can't find the filename in the log, generate expected filename
+            const timestamp = new Date().toISOString()
+              .replace(/[-:]/g, '')
+              .replace(/\..+/, '')
+              .replace('T', '_')
+              .slice(0, 15);
+            const expectedFilename = `TK_${username}_${timestamp}_flv.mp4`;
+            recording.filename = expectedFilename;
+            
+            // Notify files API that recording started
+            notifyFileStatus(recording.filename, true);
+          }
+        }
+        
+        // Check if recording finished
+        if (log.includes('Recording finished')) {
+          console.log(`🏁 Recording finished for @${username}`);
+          recording.recordingEndTime = new Date();
+          
+          if (recording.filename) {
+            // Notify files API that recording finished
+            notifyFileStatus(recording.filename, false);
+          }
+          
+          recording.status = 'monitoring';
+          recording.filename = null;
+        }
+        
+        // Check for conversion completion
+        if (log.includes('Finished converting') || log.includes('already in MP4 format') || log.includes('skipping conversion')) {
+          console.log(`✅ Conversion process completed for @${username}`);
+          
+          // Start auto-upload immediately instead of waiting 5 minutes
+          setTimeout(() => {
+            console.log(`⏰ Auto-upload starting now for @${username}`);
+            startAutoUpload(username);
+          }, 10000); // Wait just 10 seconds to ensure file is fully written
+        }
+        
+        // Check for user not live message
+        if (log.includes('is not hosting a live stream') || log.includes('USER_NOT_CURRENTLY_LIVE')) {
+          console.log(`⏳ @${username} is not live, will check again in ${interval} minutes`);
+        }
+        
+        // Check for room ID retrieval
+        if (log.includes('ROOM_ID:')) {
+          console.log(`🔑 Room ID retrieved for @${username}`);
+        }
+        
+        // Keep only last 50 logs
+        if (recording.logs.length > 50) {
+          recording.logs = recording.logs.slice(-50);
+        }
+      }
+    });
   });
 
   pythonProcess.stderr.on('data', (data) => {
-    const log = data.toString().trim();
+    const lines = data.toString().split('\n').filter(line => line.trim());
     
-    // Don't treat all stderr as errors - some are just info messages
-    if (log.includes('[!]') || log.includes('ERROR') || log.includes('error:')) {
-      console.error(`[${username}] ERROR: ${log}`);
-    }
-    
-    const recording = activeRecordings.get(username);
-    if (recording) {
-      const logType = (log.includes('[!]') || log.includes('ERROR') || log.includes('error:')) ? 'error' : 'info';
-      recording.logs.push({ type: logType, message: log, timestamp: new Date() });
+    lines.forEach(log => {
+      if (!log.trim()) return;
       
-      // Check for conversion completion in stderr as well
-      if (log.includes('Finished converting') || log.includes('already in MP4 format') || log.includes('skipping conversion')) {
-        console.log(`✅ Conversion process completed for @${username}`);
-        
-        // Start auto-upload immediately instead of waiting 5 minutes
-        setTimeout(() => {
-          console.log(`⏰ Auto-upload starting now for @${username}`);
-          startAutoUpload(username);
-        }, 10000); // Wait just 10 seconds to ensure file is fully written
+      // Always log stderr to console for visibility
+      const isError = log.includes('[!]') || log.includes('ERROR') || log.includes('error:');
+      
+      if (isError) {
+        console.error(`[${username}] ERROR: ${log}`);
+      } else {
+        console.log(`[${username}] ${log}`);
       }
-    }
+      
+      const recording = activeRecordings.get(username);
+      if (recording) {
+        const logType = isError ? 'error' : 'info';
+        recording.logs.push({ type: logType, message: log, timestamp: new Date() });
+        
+        // Check for conversion completion in stderr as well
+        if (log.includes('Finished converting') || log.includes('already in MP4 format') || log.includes('skipping conversion')) {
+          console.log(`✅ Conversion process completed for @${username}`);
+          
+          // Start auto-upload immediately instead of waiting 5 minutes
+          setTimeout(() => {
+            console.log(`⏰ Auto-upload starting now for @${username}`);
+            startAutoUpload(username);
+          }, 10000); // Wait just 10 seconds to ensure file is fully written
+        }
+      }
+    });
   });
 
   pythonProcess.on('close', (code) => {
     console.log(`[${username}] Process exited with code ${code}`);
+    clearInterval(heartbeatInterval);
     
     const recording = activeRecordings.get(username);
     if (recording) {
