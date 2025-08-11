@@ -547,7 +547,8 @@ router.get('/logs/:username', (req, res) => {
 
   res.json({
     username,
-    logs: recording.logs || []
+    logs: recording.logs || [],
+    lastHeartbeat: recording.lastHeartbeat || null
   });
 });
 
@@ -605,12 +606,38 @@ router.get('/debug/file-status/:username', async (req, res) => {
       hasAutoUploadScheduled: autoUploadTimers.has(username),
       activeRecording: activeRecordings.has(username) ? {
         status: activeRecordings.get(username).status,
-        filename: activeRecordings.get(username).filename
+        filename: activeRecordings.get(username).filename,
+        lastHeartbeat: activeRecordings.get(username).lastHeartbeat
       } : null
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
+});
+
+// Health check for monitored processes
+router.get('/health/processes', (req, res) => {
+  const processHealth = [];
+  
+  activeRecordings.forEach((recording, username) => {
+    const timeSinceHeartbeat = recording.lastHeartbeat ? 
+      (Date.now() - new Date(recording.lastHeartbeat).getTime()) / 1000 : null;
+    
+    processHealth.push({
+      username,
+      status: recording.status,
+      isAlive: recording.process && !recording.process.killed,
+      lastHeartbeat: recording.lastHeartbeat,
+      secondsSinceHeartbeat: timeSinceHeartbeat,
+      isHealthy: timeSinceHeartbeat && timeSinceHeartbeat < 120 // Healthy if heartbeat within 2 minutes
+    });
+  });
+  
+  res.json({
+    monitored: Array.from(monitoredUsers.keys()),
+    processes: processHealth,
+    timestamp: new Date().toISOString()
+  });
 });
 
 module.exports = router;
