@@ -730,17 +730,20 @@
             if (!confirm(`Stop monitoring @${username}?`)) return;
             
             try {
-                const response = await fetch(`${API_BASE}/api/recorder/monitor/${username}`, {
-                    method: 'DELETE'
+                const response = await fetch(`${API_BASE}/api/recorder/monitor/${encodeURIComponent(username)}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
                 });
 
-                const data = await response.json();
-                
-                if (response.ok) {
-                    loadDashboard();
-                } else {
-                    alert('Error: ' + data.error);
+                if (!response.ok) {
+                    const text = await response.text();
+                    throw new Error(`HTTP ${response.status}: ${text}`);
                 }
+
+                const data = await response.json();
+                loadDashboard();
             } catch (error) {
                 alert('Failed to remove user: ' + error.message);
             }
@@ -748,18 +751,20 @@
 
         async function viewLogs(username) {
             try {
-                const response = await fetch(`${API_BASE}/api/recorder/logs/${username}`);
+                const response = await fetch(`${API_BASE}/api/recorder/logs/${encodeURIComponent(username)}`);
+                
+                if (!response.ok) {
+                    const text = await response.text();
+                    throw new Error(`HTTP ${response.status}: ${text}`);
+                }
+                
                 const data = await response.json();
                 
-                if (response.ok) {
-                    const logs = data.logs.map(log => 
-                        `[${new Date(log.timestamp).toLocaleTimeString()}] ${log.message}`
-                    ).join('\n');
-                    
-                    alert(`Logs for @${username}:\n\n${logs || 'No logs available'}`);
-                } else {
-                    alert('Error: ' + data.error);
-                }
+                const logs = data.logs.map(log => 
+                    `[${new Date(log.timestamp).toLocaleTimeString()}] ${log.message}`
+                ).join('\n');
+                
+                alert(`Logs for @${username}:\n\n${logs || 'No logs available'}`);
             } catch (error) {
                 alert('Failed to get logs: ' + error.message);
             }
