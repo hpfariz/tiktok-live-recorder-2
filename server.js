@@ -14,13 +14,28 @@ app.use(express.json());
 const recordingsDir = path.join(__dirname, 'recordings');
 fs.ensureDirSync(recordingsDir);
 
+// Store monitoring processes for cleanup
+let cleanupHandlers = [];
+
 // Health check endpoint FIRST
 app.get('/health', (req, res) => {
   res.json({ 
     status: 'ok', 
     timestamp: new Date().toISOString(),
     recordings: fs.existsSync(recordingsDir),
-    port: PORT
+    port: PORT,
+    uptime: process.uptime(),
+    memory: process.memoryUsage()
+  });
+});
+
+// Keep-alive endpoint for preventing sleep
+app.get('/keep-alive', (req, res) => {
+  console.log(`Keep-alive ping received at ${new Date().toISOString()}`);
+  res.json({ 
+    status: 'alive',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime()
   });
 });
 
@@ -81,18 +96,78 @@ app.use((err, req, res, next) => {
   }
 });
 
-// Graceful shutdown
-process.on('SIGTERM', () => {
-  console.log('SIGTERM received, shutting down gracefully');
-  process.exit(0);
+// Graceful shutdown handler
+async function gracefulShutdown(signal) {
+  console.log(`\n${signal} received, starting graceful shutdown...`);
+  
+  // Stop accepting new connections
+  server.close(() => {
+    console.log('HTTP server closed');
+  });
+  
+  // Clean up any Python processes
+  try {
+    const { spawn } = require('child_process');
+    
+    // Kill all Python processes started by this app
+    const killProcess = spawn('pkill', ['-f', 'main.py']);
+    killProcess.on('close', (code) => {
+      console.log(`Python processes terminated with code ${code}`);
+    });
+    
+    // Give processes time to clean up
+    setTimeout(() => {
+      console.log('Graceful shutdown complete');
+      process.exit(0);
+    }, 5000);
+    
+  } catch (error) {
+    console.error('Error during cleanup:', error);
+    process.exit(1);
+  }
+}
+
+// Register shutdown handlers
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+  // Don't exit on uncaught exceptions, try to keep running
+  // But log it for debugging
 });
 
-process.on('SIGINT', () => {
-  console.log('SIGINT received, shutting down gracefully');
-  process.exit(0);
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  // Don't exit on unhandled rejections either
 });
 
-app.listen(PORT, '0.0.0.0', () => {
+// Memory monitoring
+setInterval(() => {
+  const used = process.memoryUsage();
+  const heapUsedMB = Math.round(used.heapUsed / 1024 / 1024);
+  const heapTotalMB = Math.round(used.heapTotal / 1024 / 1024);
+  const rssMB = Math.round(used.rss / 1024 / 1024);
+  
+  console.log(`Memory: Heap ${heapUsedMB}/${heapTotalMB} MB, RSS ${rssMB} MB`);
+  
+  // Warn if memory usage is high (Render free tier has 512MB limit)
+  if (rssMB > 400) {
+    console.warn('⚠️ High memory usage detected!');
+    
+    // Force garbage collection if available
+    if (global.gc) {
+      console.log('Running garbage collection...');
+      global.gc();
+    }
+  }
+}, 60000); // Check every minute
+
+// Start server
+const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 TikTok Live Recorder Web running on port ${PORT}`);
   console.log(`📁 Recordings directory: ${recordingsDir}`);
+  console.log(`💾 Memory limit: ~512MB (Render free tier)`);
+  console.log(`🔄 Auto-recovery enabled for crashes`);
 });
