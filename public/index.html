@@ -769,6 +769,11 @@
         async function loadFiles() {
             try {
                 const response = await fetch(`${API_BASE}/api/files`);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                
                 const files = await response.json();
                 displayFiles(files);
             } catch (error) {
@@ -923,6 +928,11 @@
         async function loadUploads() {
             try {
                 const response = await fetch(`${API_BASE}/api/uploads`);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                
                 const data = await response.json();
                 displayUploads(data.queue, data.history);
             } catch (error) {
