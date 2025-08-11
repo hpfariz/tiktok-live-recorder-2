@@ -488,18 +488,29 @@ function startMonitoring(username, interval) {
     }
     
     // If user is still monitored and process wasn't manually stopped, restart
-    if (monitoredUsers.has(username) && code !== 0) {
-      console.log(`[${username}] Restarting monitoring in 30 seconds...`);
+    if (monitoredUsers.has(username)) {
+      if (code !== 0) {
+        console.log(`[${username}] Process crashed, restarting in 30 seconds...`);
+      } else {
+        console.log(`[${username}] Process ended normally, restarting monitoring...`);
+      }
+      
       setTimeout(() => {
         if (monitoredUsers.has(username)) {
+          console.log(`[${username}] Restarting monitoring process...`);
+          activeRecordings.delete(username);
           startMonitoring(username, monitoredUsers.get(username).interval);
         }
       }, 30000);
+    } else {
+      // Clean up if user was removed
+      activeRecordings.delete(username);
     }
   });
 
   pythonProcess.on('error', (error) => {
     console.error(`[${username}] Process error:`, error);
+    clearInterval(heartbeatInterval);
     
     const recording = activeRecordings.get(username);
     if (recording) {
@@ -510,6 +521,17 @@ function startMonitoring(username, interval) {
       
       recording.error = error.message;
       recording.status = 'error';
+    }
+    
+    // Try to restart if user is still monitored
+    if (monitoredUsers.has(username)) {
+      console.log(`[${username}] Will retry monitoring in 60 seconds...`);
+      setTimeout(() => {
+        if (monitoredUsers.has(username)) {
+          activeRecordings.delete(username);
+          startMonitoring(username, monitoredUsers.get(username).interval);
+        }
+      }, 60000);
     }
   });
 }
