@@ -52,10 +52,15 @@ function setupRclone() {
       const parsed = JSON.parse(cleanToken);
       
       // Check if token is expired
-      const expiryDate = new Date(parsed.expiry);
-      const now = new Date();
-      if (expiryDate < now) {
-        console.warn('⚠️ WARNING: Token appears to be expired!');
+      if (parsed.expiry) {
+        const expiryDate = new Date(parsed.expiry);
+        const now = new Date();
+        if (expiryDate < now) {
+          console.warn('⚠️ WARNING: Token appears to be expired!');
+          console.warn(`Token expired: ${expiryDate.toISOString()}, Current time: ${now.toISOString()}`);
+        } else {
+          console.log(`✅ Token is valid until: ${expiryDate.toISOString()}`);
+        }
       }
       
       actualToken = cleanToken;
@@ -65,6 +70,7 @@ function setupRclone() {
     
   } catch (error) {
     console.error('❌ Token parsing failed:', error.message);
+    console.error('Token should be a valid JSON object containing access_token, refresh_token, etc.');
     return false;
   }
 
