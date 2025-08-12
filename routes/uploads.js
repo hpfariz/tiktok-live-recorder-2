@@ -17,8 +17,20 @@ function setupRclone() {
   const clientSecret = process.env.RCLONE_DRIVE_CLIENT_SECRET;
   const token = process.env.RCLONE_DRIVE_TOKEN;
 
+  // Debug logging for environment variables (without exposing sensitive data)
+  console.log(`Environment variables check:
+    RCLONE_DRIVE_CLIENT_ID: ${clientId ? 'SET (' + clientId.length + ' chars)' : 'NOT SET'}
+    RCLONE_DRIVE_CLIENT_SECRET: ${clientSecret ? 'SET (' + clientSecret.length + ' chars)' : 'NOT SET'}
+    RCLONE_DRIVE_TOKEN: ${token ? 'SET (' + token.length + ' chars)' : 'NOT SET'}`);
+
   if (!clientId || !clientSecret || !token) {
-    console.error('❌ Missing rclone environment variables');
+    const missing = [];
+    if (!clientId) missing.push('RCLONE_DRIVE_CLIENT_ID');
+    if (!clientSecret) missing.push('RCLONE_DRIVE_CLIENT_SECRET');
+    if (!token) missing.push('RCLONE_DRIVE_TOKEN');
+    
+    console.error(`❌ Missing rclone environment variables: ${missing.join(', ')}`);
+    console.error('Please set these environment variables in your Railway dashboard');
     return false;
   }
 
