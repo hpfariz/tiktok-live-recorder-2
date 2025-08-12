@@ -602,7 +602,35 @@ router.post('/recreate-config', (req, res) => {
   res.json({
     success: result,
     message: result ? 'Config recreated successfully' : 'Failed to recreate config',
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    debug: {
+      configPath: process.env.RCLONE_CONFIG,
+      hasClientId: !!process.env.RCLONE_DRIVE_CLIENT_ID,
+      hasClientSecret: !!process.env.RCLONE_DRIVE_CLIENT_SECRET,
+      hasToken: !!process.env.RCLONE_DRIVE_TOKEN
+    }
+  });
+});
+
+// Debug endpoint to check environment variables (without exposing sensitive data)
+router.get('/debug/env', (req, res) => {
+  res.json({
+    environment: {
+      hasClientId: !!process.env.RCLONE_DRIVE_CLIENT_ID,
+      hasClientSecret: !!process.env.RCLONE_DRIVE_CLIENT_SECRET,
+      hasToken: !!process.env.RCLONE_DRIVE_TOKEN,
+      clientIdLength: process.env.RCLONE_DRIVE_CLIENT_ID ? process.env.RCLONE_DRIVE_CLIENT_ID.length : 0,
+      clientSecretLength: process.env.RCLONE_DRIVE_CLIENT_SECRET ? process.env.RCLONE_DRIVE_CLIENT_SECRET.length : 0,
+      tokenLength: process.env.RCLONE_DRIVE_TOKEN ? process.env.RCLONE_DRIVE_TOKEN.length : 0,
+      configPath: process.env.RCLONE_CONFIG,
+      nodeEnv: process.env.NODE_ENV,
+      pwd: process.cwd(),
+      home: process.env.HOME
+    },
+    allEnvVars: Object.keys(process.env).filter(key => key.includes('RCLONE')).reduce((obj, key) => {
+      obj[key] = process.env[key] ? `SET (${process.env[key].length} chars)` : 'NOT SET';
+      return obj;
+    }, {})
   });
 });
 
