@@ -507,12 +507,27 @@ router.get('/test-config', (req, res) => {
     return res.status(500).json({ 
       success: false, 
       message: 'Failed to setup rclone config',
-      error: 'Check server logs for details'
+      error: 'Environment variables not properly configured. Check server logs for details.',
+      debug: {
+        hasClientId: !!process.env.RCLONE_DRIVE_CLIENT_ID,
+        hasClientSecret: !!process.env.RCLONE_DRIVE_CLIENT_SECRET,
+        hasToken: !!process.env.RCLONE_DRIVE_TOKEN,
+        configPath: process.env.RCLONE_CONFIG
+      }
     });
   }
 
   // Test rclone command
-  const rcloneProcess = spawn('rclone', ['lsd', 'drive:'], {
+  const rcloneArgs = ['lsd', 'drive:'];
+  
+  // Add config path if we have it
+  if (process.env.RCLONE_CONFIG) {
+    rcloneArgs.unshift('--config', process.env.RCLONE_CONFIG);
+  }
+
+  console.log(`🔧 Testing rclone with args: ${rcloneArgs.join(' ')}`);
+
+  const rcloneProcess = spawn('rclone', rcloneArgs, {
     stdio: ['pipe', 'pipe', 'pipe']
   });
 
@@ -522,19 +537,27 @@ router.get('/test-config', (req, res) => {
   rcloneProcess.stdout.on('data', (data) => {
     const text = data.toString();
     output += text;
+    console.log(`[Test] STDOUT: ${text.trim()}`);
   });
 
   rcloneProcess.stderr.on('data', (data) => {
     const text = data.toString();
     error += text;
+    console.log(`[Test] STDERR: ${text.trim()}`);
   });
 
   rcloneProcess.on('close', (code) => {
+    console.log(`[Test] Process exited with code: ${code}`);
+    
     if (code === 0) {
       res.json({ 
         success: true, 
         message: 'Rclone configuration is working',
-        output: output || 'No directories found (empty drive)' 
+        output: output || 'No directories found (empty drive)',
+        debug: {
+          configPath: process.env.RCLONE_CONFIG,
+          exitCode: code
+        }
       });
     } else {
       res.status(500).json({ 
@@ -542,17 +565,30 @@ router.get('/test-config', (req, res) => {
         message: 'Rclone configuration failed',
         error: error || 'Unknown error',
         code,
-        setupResult 
+        setupResult,
+        debug: {
+          configPath: process.env.RCLONE_CONFIG,
+          hasClientId: !!process.env.RCLONE_DRIVE_CLIENT_ID,
+          hasClientSecret: !!process.env.RCLONE_DRIVE_CLIENT_SECRET,
+          hasToken: !!process.env.RCLONE_DRIVE_TOKEN
+        }
       });
     }
   });
 
   rcloneProcess.on('error', (err) => {
+    console.error(`[Test] Process error: ${err.message}`);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to run rclone command',
       error: err.message,
-      setupResult 
+      setupResult,
+      debug: {
+        configPath: process.env.RCLONE_CONFIG,
+        hasClientId: !!process.env.RCLONE_DRIVE_CLIENT_ID,
+        hasClientSecret: !!process.env.RCLONE_DRIVE_CLIENT_SECRET,
+        hasToken: !!process.env.RCLONE_DRIVE_TOKEN
+      }
     });
   });
 });
