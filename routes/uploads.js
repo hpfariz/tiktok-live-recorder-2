@@ -374,15 +374,26 @@ function startUpload(filename, filePath, remotePath) {
 
   const fileStats = fs.statSync(filePath);
 
-  const rcloneProcess = spawn('rclone', [
+  // Use the config path if set
+  const rcloneArgs = [
     'copy',
     filePath,
     path.dirname(remotePath),
     '--progress',
     '--stats', '1s',
     '--transfers', '1',
-    '--checkers', '1'
-  ], {
+    '--checkers', '1',
+    '--verbose'
+  ];
+
+  // Add config path if we have it
+  if (process.env.RCLONE_CONFIG) {
+    rcloneArgs.unshift('--config', process.env.RCLONE_CONFIG);
+  }
+
+  console.log(`🔧 Running rclone with args: ${rcloneArgs.join(' ')}`);
+
+  const rcloneProcess = spawn('rclone', rcloneArgs, {
     stdio: ['pipe', 'pipe', 'pipe']
   });
 
@@ -395,6 +406,7 @@ function startUpload(filename, filePath, remotePath) {
   // Handle progress output
   rcloneProcess.stderr.on('data', (data) => {
     const output = data.toString();
+    console.log(`[Upload ${filename}] ${output.trim()}`);
 
     // Parse progress (rclone outputs progress to stderr)
     const progressMatch = output.match(/(\d+)%/);
@@ -410,6 +422,11 @@ function startUpload(filename, filePath, remotePath) {
     if (transferMatch && uploadInfo) {
       uploadInfo.transferRate = transferMatch[1];
     }
+  });
+
+  rcloneProcess.stdout.on('data', (data) => {
+    const output = data.toString();
+    console.log(`[Upload ${filename}] STDOUT: ${output.trim()}`);
   });
 
   rcloneProcess.on('close', (code) => {
