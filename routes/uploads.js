@@ -84,16 +84,47 @@ token = ${actualToken}
 team_drive = 
 `;
 
-  const configDir = path.join(process.env.HOME || '/tmp', '.config/rclone');
-  const configPath = path.join(configDir, 'rclone.conf');
+  // Try different config directory locations for Railway
+  const possibleConfigDirs = [
+    path.join(process.env.HOME || '/tmp', '.config/rclone'),
+    path.join('/tmp', '.config/rclone'),
+    path.join(process.cwd(), '.config/rclone'),
+    path.join('/app', '.config/rclone')
+  ];
+
+  let configDir;
+  let configPath;
+  
+  for (const dir of possibleConfigDirs) {
+    try {
+      fs.ensureDirSync(dir);
+      configPath = path.join(dir, 'rclone.conf');
+      configDir = dir;
+      console.log(`✅ Using config directory: ${configDir}`);
+      break;
+    } catch (error) {
+      console.log(`❌ Cannot use config directory ${dir}: ${error.message}`);
+      continue;
+    }
+  }
+
+  if (!configDir) {
+    console.error('❌ Could not create rclone config directory in any location');
+    return false;
+  }
   
   try {
-    fs.ensureDirSync(configDir);
     fs.writeFileSync(configPath, configContent);
     
-    // Verify file was created
+    // Verify file was created and has content
     if (fs.existsSync(configPath)) {
-      console.log('✅ Config file created successfully');
+      const stats = fs.statSync(configPath);
+      console.log(`✅ Config file created successfully at ${configPath} (${stats.size} bytes)`);
+      
+      // Set the config path environment variable for rclone
+      process.env.RCLONE_CONFIG = configPath;
+      console.log(`✅ RCLONE_CONFIG set to: ${configPath}`);
+      
       return true;
     } else {
       console.error('❌ Config file was not created');
