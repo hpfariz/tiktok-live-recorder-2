@@ -5,6 +5,7 @@ const fs = require('fs-extra');
 
 const app = express();
 const PORT = process.env.PORT || 10000;
+const BASE_PATH = '/tiktok-recorder';
 
 // Middleware
 app.use(cors());
@@ -17,7 +18,7 @@ fs.ensureDirSync(recordingsDir);
 // Store monitoring processes for cleanup
 let cleanupHandlers = [];
 
-// Health check endpoint FIRST
+// Health check endpoint - MUST be at root level
 app.get('/health', (req, res) => {
   res.json({ 
     status: 'ok', 
@@ -25,7 +26,8 @@ app.get('/health', (req, res) => {
     recordings: fs.existsSync(recordingsDir),
     port: PORT,
     uptime: process.uptime(),
-    memory: process.memoryUsage()
+    memory: process.memoryUsage(),
+    basePath: BASE_PATH
   });
 });
 
@@ -39,46 +41,63 @@ app.get('/keep-alive', (req, res) => {
   });
 });
 
-// API test endpoint
-app.get('/api/test', (req, res) => {
-  res.json({ message: 'API is working', routes: ['recorder', 'files', 'uploads'] });
-});
+// Create a router for all TikTok recorder routes
+const tiktokRouter = express.Router();
 
-// API routes BEFORE static file serving (this is critical!)
+// API routes on the TikTok router
 try {
   const recorderRoutes = require('./routes/recorder');
   const filesRoutes = require('./routes/files');
   const uploadsRoutes = require('./routes/uploads');
   
-  app.use('/api/recorder', recorderRoutes);
-  app.use('/api/files', filesRoutes);
-  app.use('/api/uploads', uploadsRoutes);
+  tiktokRouter.use('/api/recorder', recorderRoutes);
+  tiktokRouter.use('/api/files', filesRoutes);
+  tiktokRouter.use('/api/uploads', uploadsRoutes);
   
+  console.log('✅ API routes loaded successfully');
 } catch (error) {
   console.error('❌ Error loading routes:', error);
 }
 
-// Static file serving AFTER API routes
-app.use(express.static('public'));
+// API test endpoint
+tiktokRouter.get('/api/test', (req, res) => {
+  res.json({ 
+    message: 'TikTok Recorder API is working', 
+    routes: ['recorder', 'files', 'uploads'],
+    basePath: BASE_PATH 
+  });
+});
 
-// Catch-all for SPA (MUST be last)
-app.get('*', (req, res) => {
-  // Only serve HTML for non-API routes
-  if (!req.path.startsWith('/api/')) {
-    const indexPath = path.join(__dirname, 'public', 'index.html');
-    if (fs.existsSync(indexPath)) {
-      res.sendFile(indexPath);
-    } else {
-      res.status(404).send('index.html not found');
-    }
+// Serve static files for TikTok recorder
+tiktokRouter.use(express.static(path.join(__dirname, 'public')));
+
+// Catch-all for TikTok recorder SPA routing
+tiktokRouter.get('*', (req, res) => {
+  const indexPath = path.join(__dirname, 'public', 'index.html');
+  if (fs.existsSync(indexPath)) {
+    res.sendFile(indexPath);
   } else {
-    // For API routes that don't exist, return JSON error
-    res.status(404).json({ 
-      error: 'API endpoint not found',
-      path: req.path,
-      method: req.method
-    });
+    res.status(404).send('TikTok Recorder index.html not found');
   }
+});
+
+// Mount the TikTok recorder router under BASE_PATH
+app.use(BASE_PATH, tiktokRouter);
+
+// Root redirect to homepage (when accessed on port 10000 directly)
+app.get('/', (req, res) => {
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Redirect</title>
+      <meta http-equiv="refresh" content="0; url=${BASE_PATH}">
+    </head>
+    <body>
+      <p>Redirecting to <a href="${BASE_PATH}">TikTok Recorder</a>...</p>
+    </body>
+    </html>
+  `);
 });
 
 // Global error handler
@@ -86,7 +105,7 @@ app.use((err, req, res, next) => {
   console.error('Server error:', err.stack);
   
   // Return JSON for API routes, HTML for others
-  if (req.path.startsWith('/api/')) {
+  if (req.path.includes('/api/')) {
     res.status(500).json({ 
       error: 'Internal server error', 
       message: err.message 
@@ -134,13 +153,10 @@ process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 // Handle uncaught exceptions
 process.on('uncaughtException', (error) => {
   console.error('Uncaught Exception:', error);
-  // Don't exit on uncaught exceptions, try to keep running
-  // But log it for debugging
 });
 
 process.on('unhandledRejection', (reason, promise) => {
   console.error('Unhandled Rejection at:', promise, 'reason:', reason);
-  // Don't exit on unhandled rejections either
 });
 
 // Memory monitoring
@@ -152,11 +168,10 @@ setInterval(() => {
   
   console.log(`Memory: Heap ${heapUsedMB}/${heapTotalMB} MB, RSS ${rssMB} MB`);
   
-  // Warn if memory usage is high (Render free tier has 512MB limit)
+  // Warn if memory usage is high
   if (rssMB > 400) {
     console.warn('⚠️ High memory usage detected!');
     
-    // Force garbage collection if available
     if (global.gc) {
       console.log('Running garbage collection...');
       global.gc();
@@ -166,8 +181,12 @@ setInterval(() => {
 
 // Start server
 const server = app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 TikTok Live Recorder Web running on port ${PORT}`);
+  console.log(`🚀 TikTok Live Recorder running on port ${PORT}`);
   console.log(`📁 Recordings directory: ${recordingsDir}`);
-  console.log(`💾 Memory limit: ~512MB (Render free tier)`);
-  console.log(`🔄 Auto-recovery enabled for crashes`);
+  console.log(`🔗 Base path: ${BASE_PATH}`);
+  console.log(`💾 Memory limit: ~512MB (Free tier)`);
+  console.log(`🔄 Auto-recovery enabled`);
+  console.log(`\n📍 Access the app at:`);
+  console.log(`   - http://localhost:${PORT}${BASE_PATH}`);
+  console.log(`   - http://152.69.214.36${BASE_PATH}`);
 });
