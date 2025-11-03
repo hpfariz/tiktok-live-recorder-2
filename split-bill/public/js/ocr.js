@@ -1,92 +1,96 @@
-// OCR functionality using Tesseract.js
-// Load Tesseract from CDN
-const TESSERACT_CDN = 'https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js';
+const express = require('express');
+const router = express.Router();
+const vision = require('@google-cloud/vision');
 
-// Load Tesseract.js dynamically
-function loadTesseract() {
-  return new Promise((resolve, reject) => {
-    if (window.Tesseract) {
-      resolve(window.Tesseract);
-      return;
+// Initialize Vision API client
+let visionClient = null;
+
+try {
+  if (process.env.GOOGLE_VISION_API_KEY) {
+    visionClient = new vision.ImageAnnotatorClient({
+      keyFilename: process.env.GOOGLE_VISION_KEY_FILE
+    });
+  }
+} catch (error) {
+  console.error('Google Vision API not configured:', error.message);
+}
+
+// Process receipt with Google Cloud Vision
+router.post('/process', async (req, res) => {
+  if (!visionClient) {
+    return res.status(503).json({ 
+      error: 'OCR service not configured',
+      fallback: true 
+    });
+  }
+
+  try {
+    const { image } = req.body; // Base64 image
+    
+    if (!image) {
+      return res.status(400).json({ error: 'No image provided' });
     }
 
-    const script = document.createElement('script');
-    script.src = TESSERACT_CDN;
-    script.onload = () => resolve(window.Tesseract);
-    script.onerror = reject;
-    document.head.appendChild(script);
-  });
-}
-
-// Process receipt image with OCR
-async function processReceipt(imageFile, progressCallback) {
-  try {
-    const Tesseract = await loadTesseract();
-    
-    const worker = await Tesseract.createWorker({
-      logger: m => {
-        // Handle progress updates
-        if (progressCallback && m.status === 'recognizing text') {
-          progressCallback(Math.round(m.progress * 100));
-        }
-      }
-    });
-    
-    await worker.loadLanguage('eng');
-    await worker.initialize('eng');
-    
-    // Set parameters for better receipt recognition
-    await worker.setParameters({
-      tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz .,/$%-+',
+    // Call Google Vision API
+    const [result] = await visionClient.documentTextDetection({
+      image: { content: Buffer.from(image, 'base64') }
     });
 
-    const { data } = await worker.recognize(imageFile);
+    const fullText = result.fullTextAnnotation?.text || '';
+    const blocks = result.fullTextAnnotation?.pages?.[0]?.blocks || [];
 
-    await worker.terminate();
+    // Parse the structured text
+    const parsed = parseReceiptFromVision(fullText, blocks);
 
-    // Parse the OCR result
-    const parsedData = parseReceiptText(data.text);
-    
-    return {
+    res.json({
       success: true,
-      raw_text: data.text,
-      parsed: parsedData
-    };
-  } catch (error) {
-    console.error('OCR Error:', error);
-    return {
-      success: false,
-      error: error.message
-    };
-  }
-}
+      raw_text: fullText,
+      parsed: parsed
+    });
 
-// Parse receipt text to extract items and prices
-function parseReceiptText(text) {
-  const lines = text.split('\n').filter(line => line.trim());
+  } catch (error) {
+    console.error('Google Vision error:', error);
+    res.status(500).json({ 
+      error: error.message,
+      fallback: true 
+    });
+  }
+});
+
+// Advanced receipt parsing using Vision API's structured output
+function parseReceiptFromVision(text, blocks) {
+  const lines = text.split('\n').filter(l => l.trim());
   const items = [];
   let total = null;
   let tax = null;
   let serviceCharge = null;
-  let gratuity = null;
 
-  // Common patterns
-  const pricePattern = /\$?\s*(\d+[\.,]\d{2})/;
-  const totalPattern = /\b(total|amount|sum)\b/i;
-  const taxPattern = /\b(tax|vat|gst)\b/i;
-  const servicePattern = /\b(service|srv|svc)\b/i;
-  const gratuityPattern = /\b(tip|gratuity|grat)\b/i;
+  // Patterns for Indonesian receipts
+  const pricePattern = /(?:IDR|Rp\.?)?\s*(\d{1,3}(?:[,\.]\d{3})*(?:[,\.]\d{2}))/;
+  const totalPattern = /\b(total|grand\s*total|amount)\b/i;
+  const taxPattern = /\b(pb1|ppn|tax|pajak)\s*\(?(\d+[,\.]?\d*%?)\)?/i;
+  const servicePattern = /\b(service|srv|layanan)\b/i;
+
+  // Skip patterns
+  const skipPatterns = [
+    /^(subtotal|date|time|table|outlet|store|cashier|number|pc\d+)/i,
+    /^[\d\s\-\/\:]+$/, // Pure numbers/dates
+    /temporary/i
+  ];
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
     
-    if (!line) continue;
+    if (!line || line.length < 3) continue;
+
+    // Skip headers/footers
+    if (skipPatterns.some(p => p.test(line))) continue;
 
     // Check for total
     if (totalPattern.test(line)) {
       const match = line.match(pricePattern);
       if (match) {
-        total = parseFloat(match[1].replace(',', '.'));
+        total = parseIndonesianPrice(match[1]);
       }
       continue;
     }
@@ -95,67 +99,50 @@ function parseReceiptText(text) {
     if (taxPattern.test(line)) {
       const match = line.match(pricePattern);
       if (match) {
-        tax = {
-          name: 'Tax',
-          amount: parseFloat(match[1].replace(',', '.'))
-        };
+        const amount = parseIndonesianPrice(match[1]);
+        if (amount > 0) {
+          tax = { name: 'Tax (PB1)', amount };
+        }
       }
       continue;
     }
 
-    // Check for service charge
+    // Check for service
     if (servicePattern.test(line)) {
       const match = line.match(pricePattern);
       if (match) {
-        serviceCharge = {
-          name: 'Service Charge',
-          amount: parseFloat(match[1].replace(',', '.'))
-        };
+        const amount = parseIndonesianPrice(match[1]);
+        if (amount > 0) {
+          serviceCharge = { name: 'Service Charge', amount };
+        }
       }
       continue;
     }
 
-    // Check for gratuity
-    if (gratuityPattern.test(line)) {
-      const match = line.match(pricePattern);
-      if (match) {
-        gratuity = {
-          name: 'Gratuity',
-          amount: parseFloat(match[1].replace(',', '.'))
-        };
-      }
-      continue;
-    }
+    // Extract items with prices
+    const priceMatches = [...line.matchAll(new RegExp(pricePattern.source, 'g'))];
+    
+    if (priceMatches.length >= 1) {
+      // Take the rightmost price (usually the line total)
+      const lastPrice = priceMatches[priceMatches.length - 1][1];
+      const price = parseIndonesianPrice(lastPrice);
 
-    // Try to extract item with price
-    const priceMatch = line.match(pricePattern);
-    if (priceMatch) {
-      // Extract item name (everything before the price)
-      const priceIndex = line.indexOf(priceMatch[0]);
-      const itemName = line.substring(0, priceIndex).trim();
-      
-      // Skip if the item name is too short or looks like a header
-      if (itemName.length > 2 && !itemName.match(/^(item|qty|desc|price)$/i)) {
-        // Check for quantity
-        const qtyMatch = itemName.match(/^(\d+)\s*x?\s*(.+)$/i);
+      if (price > 0 && (!total || price <= total * 0.8)) {
+        // Extract item name
+        let name = line;
+        priceMatches.forEach(m => {
+          name = name.replace(m[0], '');
+        });
         
-        if (qtyMatch) {
-          const quantity = parseInt(qtyMatch[1]);
-          const name = qtyMatch[2].trim();
-          const unitPrice = parseFloat(priceMatch[1].replace(',', '.'));
-          
-          // Add multiple items if quantity > 1
-          for (let q = 0; q < quantity; q++) {
-            items.push({
-              name: name,
-              price: unitPrice / quantity
-            });
-          }
-        } else {
-          items.push({
-            name: itemName,
-            price: parseFloat(priceMatch[1].replace(',', '.'))
-          });
+        // Clean item name
+        name = name
+          .replace(/^\d+\s+/, '') // Remove quantity prefix
+          .replace(/[@#]/g, '')
+          .replace(/\s+/g, ' ')
+          .trim();
+
+        if (name.length >= 3 && !/^[\d\s\.,@]+$/.test(name)) {
+          items.push({ name, price });
         }
       }
     }
@@ -163,55 +150,41 @@ function parseReceiptText(text) {
 
   return {
     items,
-    charges: {
-      tax,
-      serviceCharge,
-      gratuity
-    },
+    charges: { tax, serviceCharge, gratuity: null },
     total
   };
 }
 
-// Format currency
-function formatCurrency(amount, symbol = '$') {
-  return `${symbol}${amount.toFixed(2)}`;
-}
-
-// Preview image before upload
-function previewImage(file, previewElement) {
-  const reader = new FileReader();
+// Parse Indonesian price format (380,000.00 or 380.000,00)
+function parseIndonesianPrice(priceStr) {
+  // Remove currency symbols and spaces
+  let cleaned = priceStr.replace(/[^\d,\.]/g, '');
   
-  reader.onload = (e) => {
-    if (previewElement.tagName === 'IMG') {
-      previewElement.src = e.target.result;
+  // Count separators to determine format
+  const commas = (cleaned.match(/,/g) || []).length;
+  const dots = (cleaned.match(/\./g) || []).length;
+  
+  // If multiple commas/dots, they're thousand separators
+  if (commas > 1 || dots > 1) {
+    // Remove thousand separators, keep last one as decimal
+    if (commas > dots) {
+      cleaned = cleaned.replace(/\./g, '').replace(/,/g, '.');
     } else {
-      const img = document.createElement('img');
-      img.src = e.target.result;
-      img.style.maxWidth = '100%';
-      img.style.height = 'auto';
-      previewElement.innerHTML = '';
-      previewElement.appendChild(img);
+      cleaned = cleaned.replace(/,/g, '');
     }
-  };
+  } else if (commas === 1 && dots === 0) {
+    // Single comma might be decimal
+    cleaned = cleaned.replace(',', '.');
+  } else if (commas === 0 && dots === 1) {
+    // Already correct format
+  } else {
+    // No decimal separator, assume it's in cents (38000 = 380.00)
+    if (cleaned.length > 2) {
+      cleaned = cleaned.slice(0, -2) + '.' + cleaned.slice(-2);
+    }
+  }
   
-  reader.readAsDataURL(file);
+  return parseFloat(cleaned) || 0;
 }
 
-// Export functions
-// Make functions available globally for browser
-window.OCR = {
-  processReceipt: processReceipt,
-  parseReceiptText: parseReceiptText,
-  formatCurrency: formatCurrency,
-  previewImage: previewImage
-};
-
-// Also keep Node.js export for compatibility
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = {
-    processReceipt,
-    parseReceiptText,
-    formatCurrency,
-    previewImage
-  };
-}
+module.exports = router;

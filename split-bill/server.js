@@ -46,6 +46,10 @@ try {
   splitBillRouter.use('/api/bills', billsRoutes);
   splitBillRouter.use('/api/settlements', settlementsRoutes);
   
+  // OCR routes (Google Cloud Vision)
+  const ocrRoutes = require('./routes/ocr');
+  splitBillRouter.use('/api/ocr', ocrRoutes);
+
   console.log('✅ API routes loaded successfully');
 } catch (error) {
   console.error('❌ Error loading routes:', error);
@@ -110,6 +114,14 @@ process.on('SIGINT', () => {
   console.log('\nSIGINT received, shutting down gracefully...');
   process.exit(0);
 });
+
+// OCR route (if Google Vision is configured)
+try {
+  const ocrRoutes = require('./routes/ocr');
+  splitBillRouter.use('/api/ocr', ocrRoutes);
+} catch (error) {
+  console.log('OCR routes not available:', error.message);
+}
 
 // Start server
 const server = app.listen(PORT, '0.0.0.0', () => {
