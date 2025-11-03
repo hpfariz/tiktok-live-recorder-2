@@ -1,10 +1,12 @@
 // Google Cloud Vision OCR Client
-const BASE_PATH = window.location.pathname.match(/^\/[^\/]+/)?.[0] || '';
-const API_BASE = window.location.origin + BASE_PATH;
 
 async function processReceiptWithGoogle(file, progressCallback) {
   try {
     if (progressCallback) progressCallback(10);
+    
+    // Get BASE_PATH from the current page context
+    const BASE_PATH = window.location.pathname.match(/^\/[^\/]+/)?.[0] || '';
+    const API_BASE = window.location.origin + BASE_PATH;
     
     // Convert image to base64
     const base64 = await fileToBase64(file);
@@ -27,7 +29,10 @@ async function processReceiptWithGoogle(file, progressCallback) {
       if (error.fallback) {
         // Fallback to Tesseract
         console.log('Google Vision not available, falling back to Tesseract...');
-        return await window.OCR.processReceipt(file, progressCallback);
+        if (window.OCR && window.OCR.processReceipt) {
+          return await window.OCR.processReceipt(file, progressCallback);
+        }
+        throw new Error('OCR service not available');
       }
       throw new Error(error.error || 'OCR failed');
     }
@@ -42,9 +47,12 @@ async function processReceiptWithGoogle(file, progressCallback) {
     
   } catch (error) {
     console.error('Google Vision error:', error);
-    // Fallback to Tesseract
-    console.log('Falling back to Tesseract...');
-    return await window.OCR.processReceipt(file, progressCallback);
+    // Fallback to Tesseract if available
+    if (window.OCR && window.OCR.processReceipt) {
+      console.log('Falling back to Tesseract...');
+      return await window.OCR.processReceipt(file, progressCallback);
+    }
+    throw error;
   }
 }
 
@@ -57,7 +65,7 @@ function fileToBase64(file) {
   });
 }
 
-// Export
+// Export to global scope
 window.GoogleOCR = {
   processReceipt: processReceiptWithGoogle
 };

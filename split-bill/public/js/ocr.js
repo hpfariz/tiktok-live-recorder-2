@@ -187,4 +187,12 @@ function parseIndonesianPrice(priceStr) {
   return parseFloat(cleaned) || 0;
 }
 
+// Make functions available globally for browser
+window.OCR = {
+  processReceipt: processReceipt,
+  parseReceiptText: parseReceiptText,
+  formatCurrency: formatCurrency,
+  previewImage: previewImage
+};
+
 module.exports = router;
