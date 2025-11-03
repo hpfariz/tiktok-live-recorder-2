@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Split Bill - Single Bill</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>💸 Split Bill</h1>
+      <p id="bill-title-header">Loading...</p>
+    </div>
+
+    <!-- Progress Steps -->
+    <div class="progress-steps">
+      <div class="progress-step active" data-step="1">
+        <div class="progress-step-circle">1</div>
+        <div class="progress-step-label">Upload</div>
+      </div>
+      <div class="progress-step" data-step="2">
+        <div class="progress-step-circle">2</div>
+        <div class="progress-step-label">Items</div>
+      </div>
+      <div class="progress-step" data-step="3">
+        <div class="progress-step-circle">3</div>
+        <div class="progress-step-label">People</div>
+      </div>
+      <div class="progress-step" data-step="4">
+        <div class="progress-step-circle">4</div>
+        <div class="progress-step-label">Split</div>
+      </div>
+      <div class="progress-step" data-step="5">
+        <div class="progress-step-circle">5</div>
+        <div class="progress-step-label">Taxes</div>
+      </div>
+      <div class="progress-step" data-step="6">
+        <div class="progress-step-circle">6</div>
+        <div class="progress-step-label">Payment</div>
+      </div>
+    </div>
+
+    <!-- Step 1: Upload Receipt -->
+    <div id="step-1" class="step-content">
+      <div class="card">
+        <div class="card-title">Upload Receipt</div>
+        
+        <div class="form-group">
+          <label class="form-label">Receipt Photo</label>
+          <input type="file" id="receipt-file" class="form-input" accept="image/*">
+          <div class="form-help">JPG, PNG, or WebP - Max 10MB</div>
+        </div>
+
+        <div id="receipt-preview" class="receipt-preview" style="display: none; margin: 20px 0;">
+          <img id="preview-image" src="" alt="Receipt preview" style="max-width: 100%; height: auto; border-radius: 6px;">
+        </div>
+
+        <div class="flex-between flex-gap">
+          <button type="button" class="btn btn-secondary" onclick="skipOCR()">Skip OCR & Add Manually</button>
+          <button type="button" class="btn btn-primary" id="process-ocr-btn" disabled>
+            Process Receipt
+          </button>
+        </div>
+
+        <div id="ocr-progress" style="display: none; margin-top: 20px;">
+          <div class="loading">
+            <div class="loading-spinner"></div>
+            <p style="margin-top: 16px;">Processing receipt... <span id="ocr-percent">0</span>%</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 2: Review Items -->
+    <div id="step-2" class="step-content" style="display: none;">
+      <div class="card">
+        <div class="card-title">Review Items</div>
+        
+        <div id="items-list"></div>
+
+        <div class="divider"></div>
+
+        <div class="form-group">
+          <label class="form-label">Add Item</label>
+          <div class="grid grid-2">
+            <input type="text" id="new-item-name" class="form-input" placeholder="Item name">
+            <input type="number" id="new-item-price" class="form-input" placeholder="Price" step="0.01">
+          </div>
+          <button type="button" class="btn btn-secondary btn-sm mt-1" onclick="addItem()">+ Add Item</button>
+        </div>
+
+        <div class="flex-between flex-gap mt-3">
+          <button type="button" class="btn btn-secondary" onclick="goToStep(1)">← Back</button>
+          <button type="button" class="btn btn-primary" onclick="goToStep(3)">Continue →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 3: Add Participants -->
+    <div id="step-3" class="step-content" style="display: none;">
+      <div class="card">
+        <div class="card-title">Who's Splitting?</div>
+        
+        <div class="form-group">
+          <label class="form-label">Add Participant</label>
+          <div class="flex flex-gap">
+            <input type="text" id="participant-name" class="form-input" placeholder="Name" style="flex: 1;">
+            <button type="button" class="btn btn-primary" onclick="addParticipant()">Add</button>
+          </div>
+        </div>
+
+        <div id="participants-list" class="participant-chips"></div>
+
+        <div id="participants-error" class="alert alert-error" style="display: none;">
+          Please add at least 2 participants
+        </div>
+
+        <div class="flex-between flex-gap mt-3">
+          <button type="button" class="btn btn-secondary" onclick="goToStep(2)">← Back</button>
+          <button type="button" class="btn btn-primary" onclick="goToStep(4)">Continue →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 4: Split Items -->
+    <div id="step-4" class="step-content" style="display: none;">
+      <div class="card">
+        <div class="card-title">Split Items</div>
+        <p class="text-secondary text-sm mb-3">Assign each item to participants</p>
+        
+        <div id="split-items-list"></div>
+
+        <div class="flex-between flex-gap mt-3">
+          <button type="button" class="btn btn-secondary" onclick="goToStep(3)">← Back</button>
+          <button type="button" class="btn btn-primary" onclick="goToStep(5)">Continue →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 5: Tax & Charges -->
+    <div id="step-5" class="step-content" style="display: none;">
+      <div class="card">
+        <div class="card-title">Tax & Service Charges</div>
+        
+        <div id="tax-charges-list"></div>
+
+        <div id="no-taxes-message" class="empty-state" style="display: none; padding: 40px;">
+          <div class="empty-state-text">No tax or service charges detected</div>
+        </div>
+
+        <div class="flex-between flex-gap mt-3">
+          <button type="button" class="btn btn-secondary" onclick="goToStep(4)">← Back</button>
+          <button type="button" class="btn btn-primary" onclick="goToStep(6)">Continue →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 6: Who Paid -->
+    <div id="step-6" class="step-content" style="display: none;">
+      <div class="card">
+        <div class="card-title">Who Paid the Bill?</div>
+        
+        <div class="form-group">
+          <label class="form-label">Select Payer</label>
+          <select id="payer-select" class="form-select">
+            <option value="">Choose who paid...</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Total Amount Paid</label>
+          <input type="number" id="payment-amount" class="form-input" placeholder="0.00" step="0.01">
+          <div class="form-help">Enter the total bill amount</div>
+        </div>
+
+        <div id="payment-error" class="alert alert-error" style="display: none;">
+          Please select a payer and enter the amount
+        </div>
+
+        <div class="flex-between flex-gap mt-3">
+          <button type="button" class="btn btn-secondary" onclick="goToStep(5)">← Back</button>
+          <button type="button" class="btn btn-primary" onclick="finishBill()">Finish & View Results →</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tax Distribution Modal -->
+  <div id="tax-modal" style="display: none;">
+    <div class="modal-overlay">
+      <div class="modal">
+        <div class="modal-header">
+          <h3 class="modal-title">Configure: <span id="tax-modal-title"></span></h3>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label">How should this be distributed?</label>
+            <select id="tax-distribution-type" class="form-select">
+              <option value="proportional">Proportional - Based on what each person ordered</option>
+              <option value="equal">Equal - Split evenly among all participants</option>
+              <option value="none">Don't include - Skip this charge</option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeTaxModal()">Cancel</button>
+          <button type="button" class="btn btn-primary" onclick="saveTaxDistribution()">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Item Split Modal -->
+  <div id="split-modal" style="display: none;">
+    <div class="modal-overlay">
+      <div class="modal">
+        <div class="modal-header">
+          <h3 class="modal-title">Split: <span id="split-modal-title"></span></h3>
+        </div>
+        <div class="modal-body">
+          <div id="split-participants-list"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeSplitModal()">Cancel</button>
+          <button type="button" class="btn btn-primary" onclick="saveSplit()">Save Split</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/ocr.js"></script>
+  <script src="js/single-bill.js"></script>
+</body>
+</html>

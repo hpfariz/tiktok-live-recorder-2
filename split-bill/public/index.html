@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Split Bill - Simple Bill Splitting</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="container-narrow">
+    <div class="header text-center">
+      <h1>💸 Split Bill</h1>
+      <p>Split bills fairly with receipt scanning</p>
+    </div>
+
+    <div class="card">
+      <div class="card-title text-center">How would you like to split?</div>
+      
+      <div class="choice-cards">
+        <a href="#" class="choice-card" id="single-bill-choice">
+          <div class="choice-card-icon">🧾</div>
+          <div class="choice-card-title">Single Bill</div>
+          <div class="choice-card-description">
+            Split one receipt among friends
+          </div>
+        </a>
+
+        <a href="#" class="choice-card" id="multi-bill-choice">
+          <div class="choice-card-icon">📋</div>
+          <div class="choice-card-title">Multiple Bills</div>
+          <div class="choice-card-description">
+            Split a day's expenses across multiple receipts
+          </div>
+        </a>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Features</div>
+      <ul style="list-style: none; padding: 0;">
+        <li style="padding: 8px 0; border-bottom: 1px solid var(--color-border);">
+          📸 OCR receipt scanning - automatically extract items
+        </li>
+        <li style="padding: 8px 0; border-bottom: 1px solid var(--color-border);">
+          👥 Flexible splitting - equal, custom amounts, or percentages
+        </li>
+        <li style="padding: 8px 0; border-bottom: 1px solid var(--color-border);">
+          🧮 Smart settlements - optimized payment calculations
+        </li>
+        <li style="padding: 8px 0; border-bottom: 1px solid var(--color-border);">
+          🔗 Shareable links - send results to everyone
+        </li>
+        <li style="padding: 8px 0;">
+          🔒 Privacy first - data automatically deleted after 7 days
+        </li>
+      </ul>
+    </div>
+
+    <div class="text-center text-secondary" style="margin-top: 40px; font-size: 12px;">
+      <p>No login required • Bills expire in 7 days</p>
+      <p style="margin-top: 8px;">Made with ❤️ for fair splitting</p>
+    </div>
+  </div>
+
+  <!-- Modal for bill creation -->
+  <div id="create-modal" style="display: none;">
+    <div class="modal-overlay">
+      <div class="modal">
+        <div class="modal-header">
+          <h3 class="modal-title">Create New Bill</h3>
+        </div>
+        <div class="modal-body">
+          <form id="create-form">
+            <div class="form-group">
+              <label class="form-label">Bill Title</label>
+              <input 
+                type="text" 
+                class="form-input" 
+                id="bill-title" 
+                placeholder="e.g., Dinner at Mario's"
+                required
+              >
+              <div class="form-help">Give your bill a memorable name</div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Currency Symbol</label>
+              <input 
+                type="text" 
+                class="form-input" 
+                id="currency-symbol" 
+                placeholder="$"
+                value="$"
+                maxlength="3"
+                required
+              >
+              <div class="form-help">e.g., $, €, £, ₹, etc.</div>
+            </div>
+
+            <input type="hidden" id="bill-mode" value="">
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" id="cancel-create">Cancel</button>
+          <button type="submit" form="create-form" class="btn btn-primary">Continue</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const BASE_PATH = window.location.pathname.match(/^\/[^\/]+/)?.[0] || '';
+    const API_BASE = window.location.origin + BASE_PATH;
+
+    const modal = document.getElementById('create-modal');
+    const createForm = document.getElementById('create-form');
+    const billModeInput = document.getElementById('bill-mode');
+
+    // Show modal for single bill
+    document.getElementById('single-bill-choice').addEventListener('click', (e) => {
+      e.preventDefault();
+      billModeInput.value = 'single';
+      modal.style.display = 'block';
+    });
+
+    // Show modal for multi bill
+    document.getElementById('multi-bill-choice').addEventListener('click', (e) => {
+      e.preventDefault();
+      billModeInput.value = 'multi';
+      modal.style.display = 'block';
+    });
+
+    // Close modal
+    document.getElementById('cancel-create').addEventListener('click', () => {
+      modal.style.display = 'none';
+      createForm.reset();
+    });
+
+    // Close modal on overlay click
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal || e.target.classList.contains('modal-overlay')) {
+        modal.style.display = 'none';
+        createForm.reset();
+      }
+    });
+
+    // Handle form submission
+    createForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const title = document.getElementById('bill-title').value.trim();
+      const currency = document.getElementById('currency-symbol').value.trim();
+      const mode = billModeInput.value;
+
+      if (!title || !mode) {
+        alert('Please fill in all fields');
+        return;
+      }
+
+      try {
+        const response = await fetch(`${API_BASE}/api/bills/create`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title,
+            mode,
+            currency_symbol: currency || '$'
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to create bill');
+        }
+
+        const data = await response.json();
+
+        // Redirect based on mode
+        if (mode === 'single') {
+          window.location.href = `${BASE_PATH}/single-bill.html?id=${data.id}`;
+        } else {
+          window.location.href = `${BASE_PATH}/multi-bill.html?id=${data.id}`;
+        }
+      } catch (error) {
+        console.error('Error creating bill:', error);
+        alert('Failed to create bill. Please try again.');
+      }
+    });
+  </script>
+</body>
+</html>

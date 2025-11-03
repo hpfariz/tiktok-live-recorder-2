@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Split Bill - Results</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>💸 Split Bill Results</h1>
+      <p id="bill-title-header">Loading...</p>
+    </div>
+
+    <!-- Bill Info -->
+    <div class="card">
+      <div class="flex-between">
+        <div>
+          <div class="text-secondary text-sm">Created</div>
+          <div id="bill-created">-</div>
+        </div>
+        <div>
+          <div class="text-secondary text-sm">Expires</div>
+          <div id="bill-expires">-</div>
+        </div>
+        <div>
+          <div class="text-secondary text-sm">Total Amount</div>
+          <div id="bill-total" class="text-lg font-bold">-</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Share & Actions -->
+    <div class="card">
+      <div class="flex-between flex-gap flex-wrap">
+        <button onclick="shareLink()" class="btn btn-primary">
+          🔗 Share Link
+        </button>
+        <button onclick="duplicateBill()" class="btn btn-secondary">
+          📋 Duplicate to Amend
+        </button>
+        <button onclick="window.location.href='${BASE_PATH}/'" class="btn btn-secondary">
+          ← New Bill
+        </button>
+      </div>
+    </div>
+
+    <!-- Participant Summary -->
+    <div class="card">
+      <div class="card-title">Participant Summary</div>
+      <div class="table-container">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th class="text-right">Owes</th>
+              <th class="text-right">Paid</th>
+              <th class="text-right">Balance</th>
+            </tr>
+          </thead>
+          <tbody id="participants-table">
+            <tr>
+              <td colspan="4" class="text-center">Loading...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="text-secondary text-sm mt-2">
+        * Positive balance = they are owed money • Negative balance = they owe money
+      </div>
+    </div>
+
+    <!-- Optimized Settlements -->
+    <div class="card">
+      <div class="card-title">💰 Optimized Settlements</div>
+      <p class="text-secondary text-sm mb-3">Minimized number of transactions</p>
+      <div id="optimized-settlements"></div>
+    </div>
+
+    <!-- Raw Debts (Expandable) -->
+    <div class="card">
+      <div class="flex-between" style="cursor: pointer;" onclick="toggleRawDebts()">
+        <div class="card-title">Raw Debts (Show Details)</div>
+        <span id="raw-debts-toggle">▼</span>
+      </div>
+      <div id="raw-debts-content" style="display: none;">
+        <p class="text-secondary text-sm mb-3">Before optimization</p>
+        <div id="raw-debts"></div>
+      </div>
+    </div>
+
+    <!-- Item Breakdown by Participant (Expandable) -->
+    <div class="card">
+      <div class="card-title">📝 Item Breakdown</div>
+      <p class="text-secondary text-sm mb-3">Click a participant to see their items</p>
+      <div id="participant-breakdowns"></div>
+    </div>
+
+    <!-- Receipts (if any) -->
+    <div class="card" id="receipts-card" style="display: none;">
+      <div class="card-title">📸 Receipts</div>
+      <div id="receipts-gallery" class="grid grid-3"></div>
+    </div>
+
+    <!-- Loading State -->
+    <div id="loading-state" class="card">
+      <div class="loading">
+        <div class="loading-spinner"></div>
+        <p style="margin-top: 16px;">Calculating settlements...</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Participant Breakdown Modal -->
+  <div id="breakdown-modal" style="display: none;">
+    <div class="modal-overlay">
+      <div class="modal">
+        <div class="modal-header">
+          <h3 class="modal-title">Item Breakdown: <span id="breakdown-participant-name"></span></h3>
+        </div>
+        <div class="modal-body">
+          <div id="breakdown-items-list"></div>
+          <div class="divider"></div>
+          <div class="flex-between">
+            <strong>Total:</strong>
+            <strong id="breakdown-total">-</strong>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-primary" onclick="closeBreakdownModal()">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Receipt Image Modal -->
+  <div id="receipt-modal" style="display: none;">
+    <div class="modal-overlay">
+      <div class="modal">
+        <div class="modal-header">
+          <h3 class="modal-title">Receipt Image</h3>
+        </div>
+        <div class="modal-body">
+          <img id="receipt-modal-image" src="" alt="Receipt" style="width: 100%; height: auto;">
+        </div>
+        <div class="modal-footer">
+          <a id="receipt-download-link" href="" download class="btn btn-secondary">Download</a>
+          <button type="button" class="btn btn-primary" onclick="closeReceiptModal()">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/results.js"></script>
+</body>
+</html>
