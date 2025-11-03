@@ -221,36 +221,36 @@ function parseReceiptFromVision(text) {
       continue;
     }
 
-    // Check for tax (price might be on next line)
-    if (taxPattern.test(line)) {
-      const match = line.match(pricePattern);
-      let amount = 0;
+    // // Check for tax (price might be on next line)
+    // if (taxPattern.test(line)) {
+    //   const match = line.match(pricePattern);
+    //   let amount = 0;
       
-      if (match) {
-        amount = parsePrice(match[1]);
-      } else if (i + 1 < lines.length) {
-        // Look ahead to next line for price
-        const nextLine = lines[i + 1].trim();
-        const nextMatch = nextLine.match(/^(\d{1,3}(?:[,\.]\d{3})*(?:[,\.]\d{2})?)$/);
-        if (nextMatch) {
-          amount = parsePrice(nextMatch[1]);
-          i++; // Skip next line
-        }
-      }
+    //   if (match) {
+    //     amount = parsePrice(match[1]);
+    //   } else if (i + 1 < lines.length) {
+    //     // Look ahead to next line for price
+    //     const nextLine = lines[i + 1].trim();
+    //     const nextMatch = nextLine.match(/^(\d{1,3}(?:[,\.]\d{3})*(?:[,\.]\d{2})?)$/);
+    //     if (nextMatch) {
+    //       amount = parsePrice(nextMatch[1]);
+    //       i++; // Skip next line
+    //     }
+    //   }
       
-      if (amount > 0) {
-        // Extract percentage if present
-        const percentMatch = line.match(/(\d+(?:\.\d+)?)\s*%/);
-        const percent = percentMatch ? parseFloat(percentMatch[1]) : null;
+    //   if (amount > 0) {
+    //     // Extract percentage if present
+    //     const percentMatch = line.match(/(\d+(?:\.\d+)?)\s*%/);
+    //     const percent = percentMatch ? parseFloat(percentMatch[1]) : null;
         
-        tax = { 
-          name: percent ? `Tax (PB1 ${percent}%)` : 'Tax (PB1)', 
-          amount 
-        };
-        console.log(`Found tax: ${amount}${percent ? ' (' + percent + '%)' : ''}`);
-      }
-      continue;
-    }
+    //     tax = { 
+    //       name: percent ? `Tax (PB1 ${percent}%)` : 'Tax (PB1)', 
+    //       amount 
+    //     };
+    //     console.log(`Found tax: ${amount}${percent ? ' (' + percent + '%)' : ''}`);
+    //   }
+    //   continue;
+    // }
 
     // Check for service charge
     if (servicePattern.test(line)) {

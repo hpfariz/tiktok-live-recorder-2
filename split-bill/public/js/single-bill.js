@@ -264,7 +264,9 @@ function renderItems() {
     <div class="item-list-item">
       <div class="flex-between">
         <div>
-          <strong>${item.name}</strong>
+          <strong>${item.quantity && item.quantity > 1 && item.unit_price 
+            ? `${item.name} (${item.quantity}x${billData.currency_symbol}${item.unit_price.toFixed(2)})`
+            : item.name}</strong>
           <div class="text-secondary text-sm">${billData.currency_symbol}${item.price.toFixed(2)}</div>
         </div>
         <button onclick="deleteItem('${item.id}', ${index})" class="btn btn-danger btn-sm">Delete</button>
@@ -493,8 +495,10 @@ function renderSplitItems() {
       ? `Split among ${splitCount} ${splitCount === 1 ? 'person' : 'people'}`
       : 'Not assigned yet';
     
-    const qtyText = item.quantity ? ` (${item.quantity}x ${billData.currency_symbol}${item.unitPrice.toFixed(2)})` : '';
-
+    const qtyText = (item.quantity && item.quantity > 1 && item.unit_price) 
+    ? ` (${item.quantity}x ${billData.currency_symbol}${item.unit_price.toFixed(2)})` 
+    : '';
+    
     return `
     <div class="item-list-item">
         <div class="flex-between">
