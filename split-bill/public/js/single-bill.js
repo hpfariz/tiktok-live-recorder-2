@@ -353,15 +353,19 @@ function openSplitModal(itemId) {
         
         <div id="split-options-${p.id}" style="display: ${existingSplit ? 'block' : 'none'}; margin-top: 8px; margin-left: 24px;">
           <select class="form-select mb-1" id="split-type-${p.id}" onchange="updateSplitOptions('${p.id}')">
-            <option value="equal" ${existingSplit && existingSplit.split_type === 'equal' ? 'selected' : ''}>Equal Split</option>
-            <option value="fixed" ${existingSplit && existingSplit.split_type === 'fixed' ? 'selected' : ''}>Fixed Amount</option>
-            <option value="percent" ${existingSplit && existingSplit.split_type === 'percent' ? 'selected' : ''}>Percentage</option>
-          </select>
+            <option value="equal">Equal Split</option>
+            ${currentSplitItem.quantity ? '<option value="quantity">By Quantity</option>' : ''}
+            <option value="fixed">Fixed Amount</option>
+            <option value="percent">Percentage</option>
+        </select>
           
           <div id="split-value-container-${p.id}" style="display: ${existingSplit && existingSplit.split_type !== 'equal' ? 'block' : 'none'};">
             <input type="number" class="form-input" id="split-value-${p.id}" 
-              placeholder="${existingSplit && existingSplit.split_type === 'percent' ? 'Percentage' : 'Amount'}"
-              step="0.01"
+              placeholder="${existingSplit ? 
+              (existingSplit.split_type === 'percent' ? 'Percentage' : 
+              existingSplit.split_type === 'quantity' ? `Quantity (max ${currentSplitItem.quantity})` : 
+              'Amount') : 'Value'}"
+              ${existingSplit && existingSplit.split_type === 'quantity' ? 'step="1" min="1" max="' + currentSplitItem.quantity + '"' : 'step="0.01"'}
               value="${existingSplit && existingSplit.split_type !== 'equal' ? existingSplit.value : ''}">
           </div>
         </div>
@@ -390,7 +394,23 @@ function updateSplitOptions(participantId) {
   } else {
     container.style.display = 'block';
     const input = document.getElementById(`split-value-${participantId}`);
-    input.placeholder = type === 'percent' ? 'Percentage' : 'Amount';
+    
+    if (type === 'percent') {
+      input.placeholder = 'Percentage';
+      input.step = '0.01';
+      input.removeAttribute('min');
+      input.removeAttribute('max');
+    } else if (type === 'quantity' && currentSplitItem.quantity) {
+      input.placeholder = `Quantity (max ${currentSplitItem.quantity})`;
+      input.step = '1';
+      input.min = '1';
+      input.max = currentSplitItem.quantity;
+    } else {
+      input.placeholder = 'Amount';
+      input.step = '0.01';
+      input.removeAttribute('min');
+      input.removeAttribute('max');
+    }
   }
 }
 
@@ -464,11 +484,13 @@ function renderSplitItems() {
       ? `Split among ${splitCount} ${splitCount === 1 ? 'person' : 'people'}`
       : 'Not assigned yet';
     
+    const qtyText = item.quantity ? ` (${item.quantity}x ${billData.currency_symbol}${item.unitPrice.toFixed(2)})` : '';
+
     return `
-      <div class="item-list-item">
+    <div class="item-list-item">
         <div class="flex-between">
-          <div>
-            <strong>${item.name}</strong>
+        <div>
+            <strong>${item.name}${qtyText}</strong>
             <div class="text-secondary text-sm">${billData.currency_symbol}${item.price.toFixed(2)}</div>
             <div class="text-sm mt-1">${splitText}</div>
           </div>

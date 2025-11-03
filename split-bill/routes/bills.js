@@ -266,7 +266,7 @@ router.post('/item/:itemId/split', (req, res) => {
     return res.status(400).json({ error: 'Participant, split type, and value are required' });
   }
   
-  if (!['equal', 'fixed', 'percent'].includes(split_type)) {
+  if (!['equal', 'fixed', 'percent', 'quantity'].includes(split_type)) {
     return res.status(400).json({ error: 'Invalid split type' });
   }
   

@@ -66,21 +66,49 @@ router.get('/:billId', (req, res) => {
           }
         }
         
-        // Calculate splits
-        for (const split of splits) {
+        // SMART MIXED SPLIT CALCULATION
+        // Separate splits by type
+        const fixedSplits = splits.filter(s => s.split_type === 'fixed');
+        const qtySplits = splits.filter(s => s.split_type === 'quantity');
+        const percentSplits = splits.filter(s => s.split_type === 'percent');
+        const equalSplits = splits.filter(s => s.split_type === 'equal');
+
+        let remaining = itemAmount;
+
+        // Step 1: Process fixed amounts
+        for (const split of fixedSplits) {
           if (!balances[split.participant_id]) continue;
-          
-          let amount = 0;
-          
-          if (split.split_type === 'equal') {
-            amount = itemAmount / splits.length;
-          } else if (split.split_type === 'fixed') {
-            amount = split.value;
-          } else if (split.split_type === 'percent') {
-            amount = (itemAmount * split.value) / 100;
-          }
-          
+          const amount = split.value;
           balances[split.participant_id].owes += amount;
+          remaining -= amount;
+        }
+
+        // Step 2: Process quantity splits
+        if (item.quantity && qtySplits.length > 0) {
+          const unitPrice = itemAmount / item.quantity;
+          for (const split of qtySplits) {
+            if (!balances[split.participant_id]) continue;
+            const amount = unitPrice * split.value;
+            balances[split.participant_id].owes += amount;
+            remaining -= amount;
+          }
+        }
+
+        // Step 3: Process percentages from remaining
+        for (const split of percentSplits) {
+          if (!balances[split.participant_id]) continue;
+          const amount = (remaining * split.value) / 100;
+          balances[split.participant_id].owes += amount;
+          remaining -= amount;
+        }
+
+        // Step 4: Split remainder equally
+        if (equalSplits.length > 0) {
+          const equalAmount = remaining / equalSplits.length;
+          for (const split of equalSplits) {
+            if (!balances[split.participant_id]) continue;
+            balances[split.participant_id].owes += equalAmount;
+          }
         }
       }
     }

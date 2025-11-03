@@ -96,7 +96,10 @@ function parseReceiptFromVision(text) {
     /^de$/i,
     /^#\d+$/,
     /^r\s+serv/i,
-    /^\+\s*(dingin|normal|panas)/i // Temperature options
+    /^\+\s*(dingin|normal|panas)/i, // Temperature options
+    /^ap$/i,
+    /^kon$/i,
+    /^ak$/i
   ];
 
   console.log(`Processing ${lines.length} lines...`);
@@ -128,15 +131,33 @@ function parseReceiptFromVision(text) {
       continue;
     }
 
-    // Check for tax
+    // Check for tax (price might be on next line)
     if (taxPattern.test(line)) {
       const match = line.match(pricePattern);
+      let amount = 0;
+      
       if (match) {
-        const amount = parsePrice(match[1]);
-        if (amount > 0) {
-          tax = { name: 'Tax (PB1)', amount };
-          console.log(`Found tax: ${amount}`);
+        amount = parsePrice(match[1]);
+      } else if (i + 1 < lines.length) {
+        // Look ahead to next line for price
+        const nextLine = lines[i + 1].trim();
+        const nextMatch = nextLine.match(/^(\d{1,3}(?:[,\.]\d{3})*(?:[,\.]\d{2})?)$/);
+        if (nextMatch) {
+          amount = parsePrice(nextMatch[1]);
+          i++; // Skip next line
         }
+      }
+      
+      if (amount > 0) {
+        // Extract percentage if present
+        const percentMatch = line.match(/(\d+(?:\.\d+)?)\s*%/);
+        const percent = percentMatch ? parseFloat(percentMatch[1]) : null;
+        
+        tax = { 
+          name: percent ? `Tax (PB1 ${percent}%)` : 'Tax (PB1)', 
+          amount 
+        };
+        console.log(`Found tax: ${amount}${percent ? ' (' + percent + '%)' : ''}`);
       }
       continue;
     }
@@ -178,7 +199,7 @@ function parseReceiptFromVision(text) {
           const expectedTotal = quantity * unitPrice;
           const difference = Math.abs(lineTotal - expectedTotal);
           
-          if (difference < 1 || difference / expectedTotal < 0.1) {
+          if ((difference < 1 || difference / expectedTotal < 0.1) && lineTotal > 0) {
             // Valid item - use line total as the price
             // Check for duplicates
             const isDuplicate = items.some(item => 
@@ -199,6 +220,10 @@ function parseReceiptFromVision(text) {
             }
             
             // Skip the next 2 lines since we've processed them
+            i += 2;
+            continue;
+          } else if (lineTotal === 0) {
+            console.log(`Skipped (free item): ${itemName}`);
             i += 2;
             continue;
           }
@@ -226,7 +251,7 @@ function parseReceiptFromVision(text) {
       const lastPrice = priceMatches[priceMatches.length - 1][1];
       const price = parsePrice(lastPrice);
 
-      // Validate price
+      // Validate price (must be > 0)
       if (price > 0 && price < 10000000) {
         // Extract item name
         let name = line;
