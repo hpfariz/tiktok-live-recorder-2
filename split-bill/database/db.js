@@ -41,6 +41,8 @@ db.exec(`
     is_tax_or_charge INTEGER DEFAULT 0,
     charge_type TEXT,
     item_order INTEGER DEFAULT 0,
+    quantity INTEGER DEFAULT 1,
+    unit_price REAL,
     FOREIGN KEY (receipt_id) REFERENCES receipts(id) ON DELETE CASCADE
   );
 

@@ -172,7 +172,7 @@ router.post('/:id/receipt', upload.single('receipt'), (req, res) => {
 // Add item to receipt
 router.post('/:id/receipt/:receiptId/item', (req, res) => {
   const { receiptId } = req.params;
-  const { name, price, is_tax_or_charge, charge_type, item_order } = req.body;
+  const { name, price, is_tax_or_charge, charge_type, item_order, quantity, unit_price } = req.body;
   
   if (!name || price === undefined) {
     return res.status(400).json({ error: 'Name and price are required' });
@@ -182,8 +182,8 @@ router.post('/:id/receipt/:receiptId/item', (req, res) => {
     const itemId = nanoid(10);
     
     db.prepare(`
-      INSERT INTO items (id, receipt_id, name, price, is_tax_or_charge, charge_type, item_order)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO items (id, receipt_id, name, price, is_tax_or_charge, charge_type, item_order, quantity, unit_price)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       itemId, 
       receiptId, 
@@ -191,10 +191,19 @@ router.post('/:id/receipt/:receiptId/item', (req, res) => {
       parseFloat(price), 
       is_tax_or_charge ? 1 : 0,
       charge_type || null,
-      item_order || 0
+      item_order || 0,
+      quantity || 1,
+      unit_price ? parseFloat(unit_price) : null
     );
     
-    res.json({ id: itemId, receipt_id: receiptId, name, price: parseFloat(price) });
+    res.json({ 
+      id: itemId, 
+      receipt_id: receiptId, 
+      name, 
+      price: parseFloat(price),
+      quantity: quantity || 1,
+      unit_price: unit_price ? parseFloat(unit_price) : null
+    });
   } catch (error) {
     console.error('Error adding item:', error);
     res.status(500).json({ error: 'Failed to add item' });
@@ -204,14 +213,22 @@ router.post('/:id/receipt/:receiptId/item', (req, res) => {
 // Update item
 router.put('/item/:itemId', (req, res) => {
   const { itemId } = req.params;
-  const { name, price, is_tax_or_charge, charge_type } = req.body;
+  const { name, price, is_tax_or_charge, charge_type, quantity, unit_price } = req.body;
   
   try {
     db.prepare(`
       UPDATE items 
-      SET name = ?, price = ?, is_tax_or_charge = ?, charge_type = ?
+      SET name = ?, price = ?, is_tax_or_charge = ?, charge_type = ?, quantity = ?, unit_price = ?
       WHERE id = ?
-    `).run(name, parseFloat(price), is_tax_or_charge ? 1 : 0, charge_type || null, itemId);
+    `).run(
+      name, 
+      parseFloat(price), 
+      is_tax_or_charge ? 1 : 0, 
+      charge_type || null,
+      quantity || 1,
+      unit_price ? parseFloat(unit_price) : null,
+      itemId
+    );
     
     res.json({ success: true });
   } catch (error) {

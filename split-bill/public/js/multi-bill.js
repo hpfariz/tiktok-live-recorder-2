@@ -240,19 +240,51 @@ async function saveReceipt() {
     // Add items to receipt
     const items = currentOCRResult.items || [];
     for (const item of items) {
-      await addItemToReceipt(receiptData.id, item.name, item.price, false);
+      await addItemToReceipt(
+        receiptData.id, 
+        item.name, 
+        item.price, 
+        false, 
+        null,
+        item.quantity || 1,
+        item.unitPrice || null
+      );
     }
     
     // Add tax/charges
     if (currentOCRResult.charges) {
       if (currentOCRResult.charges.tax) {
-        await addItemToReceipt(receiptData.id, currentOCRResult.charges.tax.name, currentOCRResult.charges.tax.amount, true, 'tax');
+        await addItemToReceipt(
+          receiptData.id, 
+          currentOCRResult.charges.tax.name, 
+          currentOCRResult.charges.tax.amount, 
+          true, 
+          'tax',
+          1,
+          null
+        );
       }
       if (currentOCRResult.charges.serviceCharge) {
-        await addItemToReceipt(receiptData.id, currentOCRResult.charges.serviceCharge.name, currentOCRResult.charges.serviceCharge.amount, true, 'service');
+        await addItemToReceipt(
+          receiptData.id, 
+          currentOCRResult.charges.serviceCharge.name, 
+          currentOCRResult.charges.serviceCharge.amount, 
+          true, 
+          'service',
+          1,
+          null
+        );
       }
       if (currentOCRResult.charges.gratuity) {
-        await addItemToReceipt(receiptData.id, currentOCRResult.charges.gratuity.name, currentOCRResult.charges.gratuity.amount, true, 'gratuity');
+        await addItemToReceipt(
+          receiptData.id, 
+          currentOCRResult.charges.gratuity.name, 
+          currentOCRResult.charges.gratuity.amount, 
+          true, 
+          'gratuity',
+          1,
+          null
+        );
       }
     }
     
@@ -267,7 +299,7 @@ async function saveReceipt() {
 }
 
 // Add item to receipt
-async function addItemToReceipt(receiptId, name, price, isTax = false, chargeType = null) {
+async function addItemToReceipt(receiptId, name, price, isTax = false, chargeType = null, quantity = 1, unitPrice = null) {
   try {
     const response = await fetch(`${API_BASE}/api/bills/${billId}/receipt/${receiptId}/item`, {
       method: 'POST',
@@ -276,7 +308,9 @@ async function addItemToReceipt(receiptId, name, price, isTax = false, chargeTyp
         name,
         price: parseFloat(price),
         is_tax_or_charge: isTax ? 1 : 0,
-        charge_type: chargeType
+        charge_type: chargeType,
+        quantity: quantity,
+        unit_price: unitPrice
       })
     });
     
@@ -323,8 +357,8 @@ async function saveManualItem() {
     
     const receiptData = await receiptResponse.json();
     
-    // Add item
-    await addItemToReceipt(receiptData.id, name, price);
+    // Add item (manual items default to quantity 1)
+    await addItemToReceipt(receiptData.id, name, price, false, null, 1, price);
     
     // Reload
     await loadBill();
@@ -454,7 +488,8 @@ async function addItemToCurrentReceipt() {
   }
   
   try {
-    await addItemToReceipt(currentReceipt.id, name, price);
+    // Manual items added during edit default to quantity 1
+    await addItemToReceipt(currentReceipt.id, name, price, false, null, 1, price);
     
     // Reload
     await loadBill();

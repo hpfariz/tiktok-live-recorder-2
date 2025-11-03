@@ -122,7 +122,14 @@ async function processReceipt() {
     // Add items from OCR
     if (result.parsed.items && result.parsed.items.length > 0) {
       for (const item of result.parsed.items) {
-        await addItemToServer(item.name, item.price);
+        await addItemToServer(
+          item.name, 
+          item.price, 
+          false, 
+          null,
+          item.quantity || 1,
+          item.unitPrice || null
+        );
       }
     }
     
@@ -171,7 +178,7 @@ async function skipOCR() {
 }
 
 // Add item to server
-async function addItemToServer(name, price, isTax = false, chargeType = null) {
+async function addItemToServer(name, price, isTax = false, chargeType = null, quantity = 1, unitPrice = null) {
   try {
     const response = await fetch(`${API_BASE}/api/bills/${billId}/receipt/${receiptId}/item`, {
       method: 'POST',
@@ -181,7 +188,9 @@ async function addItemToServer(name, price, isTax = false, chargeType = null) {
         price: parseFloat(price),
         is_tax_or_charge: isTax ? 1 : 0,
         charge_type: chargeType,
-        item_order: items.length
+        item_order: items.length,
+        quantity: quantity,
+        unit_price: unitPrice
       })
     });
     
@@ -354,10 +363,10 @@ function openSplitModal(itemId) {
         <div id="split-options-${p.id}" style="display: ${existingSplit ? 'block' : 'none'}; margin-top: 8px; margin-left: 24px;">
           <select class="form-select mb-1" id="split-type-${p.id}" onchange="updateSplitOptions('${p.id}')">
             <option value="equal">Equal Split</option>
-            ${currentSplitItem.quantity ? '<option value="quantity">By Quantity</option>' : ''}
+            ${currentSplitItem.quantity && currentSplitItem.quantity > 1 ? `<option value="quantity">By Quantity (max ${currentSplitItem.quantity})</option>` : ''}
             <option value="fixed">Fixed Amount</option>
             <option value="percent">Percentage</option>
-        </select>
+          </select>
           
           <div id="split-value-container-${p.id}" style="display: ${existingSplit && existingSplit.split_type !== 'equal' ? 'block' : 'none'};">
             <input type="number" class="form-input" id="split-value-${p.id}" 

@@ -72,6 +72,7 @@ function parseReceiptFromVision(text) {
   const lines = text.split('\n').filter(l => l.trim());
   const items = [];
   let total = null;
+  let subtotal = null;
   let tax = null;
   let serviceCharge = null;
 
@@ -104,6 +105,95 @@ function parseReceiptFromVision(text) {
 
   console.log(`Processing ${lines.length} lines...`);
 
+  // FIRST PASS: Find subtotal and total for tax calculation
+  let subtotalIndex = -1;
+  let totalIndex = -1;
+  let taxLineIndex = -1;
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    
+    if (subtotalPattern.test(line)) {
+      subtotalIndex = i;
+      console.log(`Found SUBTOTAL keyword at line ${i}`);
+    }
+    
+    if (taxPattern.test(line) && !subtotalPattern.test(line)) {
+      taxLineIndex = i;
+      console.log(`Found TAX keyword at line ${i}`);
+    }
+    
+    if (totalPattern.test(line) && !subtotalPattern.test(line)) {
+      totalIndex = i;
+      console.log(`Found TOTAL keyword at line ${i}`);
+    }
+  }
+  
+  // Extract amounts by looking ahead from keywords
+  if (subtotalIndex >= 0) {
+    for (let j = subtotalIndex + 1; j < Math.min(subtotalIndex + 6, lines.length); j++) {
+      const amountLine = lines[j].trim();
+      const amountMatch = amountLine.match(/^(\d{1,3}(?:[,\.]\d{3})*(?:[,\.]\d{2})?)$/);
+      if (amountMatch) {
+        const amount = parsePrice(amountMatch[1]);
+        if (amount > 0 && amount < 10000000) {
+          subtotal = amount;
+          console.log(`Found SUBTOTAL amount: ${subtotal}`);
+          break;
+        }
+      }
+    }
+  }
+  
+  if (totalIndex >= 0) {
+    const possibleTotals = [];
+    for (let j = totalIndex + 1; j < Math.min(totalIndex + 9, lines.length); j++) {
+      const amountLine = lines[j].trim();
+      const amountMatch = amountLine.match(/^(\d{1,3}(?:[,\.]\d{3})*(?:[,\.]\d{2})?)$/);
+      if (amountMatch) {
+        const amount = parsePrice(amountMatch[1]);
+        if (amount > 0 && amount < 10000000) {
+          possibleTotals.push({ amount, line: j });
+        }
+      }
+    }
+    if (possibleTotals.length > 0) {
+      possibleTotals.sort((a, b) => b.amount - a.amount);
+      total = possibleTotals[0].amount;
+      console.log(`Found TOTAL amount: ${total}`);
+    }
+  }
+  
+  // Calculate tax from difference
+  if (subtotal && total && total > subtotal) {
+    const taxAmount = total - subtotal;
+    let taxPercent = 10;
+    let taxName = 'Tax (PB1)';
+    
+    if (taxLineIndex >= 0) {
+      const taxLine = lines[taxLineIndex];
+      const percentMatch = taxLine.match(/(\d+(?:\.\d+)?)\s*%/);
+      if (percentMatch) {
+        taxPercent = parseFloat(percentMatch[1]);
+      }
+      
+      if (/ppn/i.test(taxLine)) {
+        taxName = `PPN ${taxPercent}%`;
+      } else if (/pb1/i.test(taxLine)) {
+        taxName = `PB1 ${taxPercent}%`;
+      } else {
+        taxName = `Tax ${taxPercent}%`;
+      }
+    }
+    
+    tax = { 
+      name: taxName, 
+      amount: Math.round(taxAmount * 100) / 100 
+    };
+    console.log(`✅ Calculated TAX: ${tax.name} = ${tax.amount}`);
+  }
+
+  // SECOND PASS: Parse items
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
     
