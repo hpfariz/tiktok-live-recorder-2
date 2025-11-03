@@ -96,7 +96,7 @@ async function processReceipt() {
   
   try {
     // Process with OCR
-    const result = await window.processReceipt(file, (progress) => {
+    const result = await window.OCR.processReceipt(file, (progress) => {
       document.getElementById('ocr-percent').textContent = progress;
     });
     

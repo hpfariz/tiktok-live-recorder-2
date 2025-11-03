@@ -197,6 +197,15 @@ function previewImage(file, previewElement) {
 }
 
 // Export functions
+// Make functions available globally for browser
+window.OCR = {
+  processReceipt: processReceipt,
+  parseReceiptText: parseReceiptText,
+  formatCurrency: formatCurrency,
+  previewImage: previewImage
+};
+
+// Also keep Node.js export for compatibility
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     processReceipt,
