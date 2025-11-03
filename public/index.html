@@ -446,7 +446,11 @@
 
     <script>
         let currentTab = 'dashboard';
-        const API_BASE = window.location.origin;
+        const BASE_PATH = window.location.pathname.match(/^\/[^\/]+/)?.[0] || '';
+        const API_BASE = window.location.origin + BASE_PATH;
+
+        console.log('Detected BASE_PATH:', BASE_PATH);
+        console.log('API_BASE:', API_BASE);
 
         // Tab management
         function showTab(tabName) {
