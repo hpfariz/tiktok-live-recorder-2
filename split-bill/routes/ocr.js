@@ -63,7 +63,7 @@ router.post('/process', async (req, res) => {
   }
 });
 
-// Parse receipt text into structured data
+// Parse receipt text into structured data - FIXED FOR MULTI-LINE FORMAT
 function parseReceiptFromVision(text) {
   console.log('=== RAW TEXT FROM GOOGLE VISION ===');
   console.log(text);
@@ -75,22 +75,28 @@ function parseReceiptFromVision(text) {
   let tax = null;
   let serviceCharge = null;
 
-  // More lenient price pattern - matches various formats
+  // Patterns
   const pricePattern = /(\d{1,3}(?:[,\.]\d{3})*(?:[,\.]\d{2})?)/;
   const totalPattern = /\b(total|grand\s*total|amount)\b/i;
   const taxPattern = /\b(pb1|ppn|tax|pajak)\b/i;
   const servicePattern = /\b(service|srv|layanan)\b/i;
   const subtotalPattern = /\bsubtotal\b/i;
+  const itemLinePattern = /^(\d+)\s+(.+)/; // Matches "5 Mineral Water 600 ML"
+  const unitPricePattern = /^@(\d{1,3}(?:[,\.]\d{3})*(?:[,\.]\d{2})?)/; // Matches "@35,000.00"
 
-  // Minimal skip patterns - only skip obvious non-items
+  // Skip patterns
   const skipPatterns = [
-    /^(date|time|table|outlet|store|cashier|number|dine\s*in)\b/i,
+    /^(date|time|table|outlet|store|cashier|number|dine\s*in|idr)\b/i,
     /^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}/, // Dates
     /^\d{1,2}:\d{2}/, // Times
     /^pc\d+/i,
     /^avg\s*per\s*pax/i,
     /temporary/i,
-    /^\*+$/
+    /^\*+$/,
+    /^de$/i,
+    /^#\d+$/,
+    /^r\s+serv/i,
+    /^\+\s*(dingin|normal|panas)/i // Temperature options
   ];
 
   console.log(`Processing ${lines.length} lines...`);
@@ -148,15 +154,79 @@ function parseReceiptFromVision(text) {
       continue;
     }
 
-    // Try to extract items with prices
+    // MULTI-LINE FORMAT: Check if this is an item line (starts with quantity)
+    const itemMatch = line.match(itemLinePattern);
+    if (itemMatch && i + 2 < lines.length) {
+      const quantity = parseInt(itemMatch[1]);
+      const itemName = itemMatch[2].trim();
+      
+      // Look ahead for unit price line (next line should start with @)
+      const nextLine = lines[i + 1].trim();
+      const unitPriceMatch = nextLine.match(unitPricePattern);
+      
+      if (unitPriceMatch) {
+        const unitPrice = parsePrice(unitPriceMatch[1]);
+        
+        // Look ahead for line total (2 lines ahead)
+        const lineTotalLine = lines[i + 2].trim();
+        const lineTotalMatch = lineTotalLine.match(/^(\d{1,3}(?:[,\.]\d{3})*(?:[,\.]\d{2})?)/);
+        
+        if (lineTotalMatch) {
+          const lineTotal = parsePrice(lineTotalMatch[1]);
+          
+          // Validate: lineTotal should be close to quantity * unitPrice
+          const expectedTotal = quantity * unitPrice;
+          const difference = Math.abs(lineTotal - expectedTotal);
+          
+          if (difference < 1 || difference / expectedTotal < 0.1) {
+            // Valid item - use line total as the price
+            // Check for duplicates
+            const isDuplicate = items.some(item => 
+              item.name.toLowerCase() === itemName.toLowerCase() && 
+              Math.abs(item.price - lineTotal) < 0.01
+            );
+            
+            if (!isDuplicate) {
+              items.push({ 
+                name: itemName, 
+                price: lineTotal,
+                quantity: quantity,
+                unitPrice: unitPrice
+              });
+              console.log(`Added item: ${itemName} (${quantity}x${unitPrice}) = ${lineTotal}`);
+            } else {
+              console.log(`Skipped (duplicate): ${itemName} - ${lineTotal}`);
+            }
+            
+            // Skip the next 2 lines since we've processed them
+            i += 2;
+            continue;
+          }
+        }
+      }
+    }
+
+    // SINGLE-LINE FORMAT: Try to extract items with prices on the same line
     const priceMatches = [...line.matchAll(new RegExp(pricePattern.source, 'g'))];
     
     if (priceMatches.length >= 1) {
+      // Skip if line starts with @ (unit price line)
+      if (line.startsWith('@')) {
+        console.log(`Skipped (unit price line): ${line}`);
+        continue;
+      }
+      
+      // Skip if line is just a number (probably a line total)
+      if (/^\d{1,3}(?:[,\.]\d{3})*(?:[,\.]\d{2})?$/.test(line)) {
+        console.log(`Skipped (standalone price): ${line}`);
+        continue;
+      }
+      
       // Take the rightmost price (usually the line total)
       const lastPrice = priceMatches[priceMatches.length - 1][1];
       const price = parsePrice(lastPrice);
 
-      // More lenient validation
+      // Validate price
       if (price > 0 && price < 10000000) {
         // Extract item name
         let name = line;
@@ -171,8 +241,8 @@ function parseReceiptFromVision(text) {
           .replace(/\s+/g, ' ') // Normalize spaces
           .trim();
 
-        // Lenient validation - just needs to have some letters
-        if (name.length >= 2 && /[a-zA-Z]/.test(name)) {
+        // Validate name
+        if (name.length >= 3 && /[a-zA-Z]/.test(name)) {
           // Check for duplicates
           const isDuplicate = items.some(item => 
             item.name.toLowerCase() === name.toLowerCase() && 
@@ -181,7 +251,7 @@ function parseReceiptFromVision(text) {
           
           if (!isDuplicate) {
             items.push({ name, price });
-            console.log(`Added item: ${name} - ${price}`);
+            console.log(`Added item (single-line): ${name} - ${price}`);
           } else {
             console.log(`Skipped (duplicate): ${name} - ${price}`);
           }
