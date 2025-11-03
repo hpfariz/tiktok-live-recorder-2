@@ -1,198 +1,124 @@
-const express = require('express');
-const router = express.Router();
-const vision = require('@google-cloud/vision');
+// OCR Module using Tesseract.js (client-side fallback)
 
-// Initialize Vision API client
-let visionClient = null;
+const TESSERACT_CDN = 'https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js';
 
-try {
-  if (process.env.GOOGLE_VISION_API_KEY) {
-    visionClient = new vision.ImageAnnotatorClient({
-      keyFilename: process.env.GOOGLE_VISION_KEY_FILE
-    });
+// Load Tesseract from CDN
+async function loadTesseract() {
+  if (window.Tesseract) {
+    return window.Tesseract;
   }
-} catch (error) {
-  console.error('Google Vision API not configured:', error.message);
+
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = TESSERACT_CDN;
+    script.async = true;
+    script.onload = () => resolve(window.Tesseract);
+    script.onerror = () => reject(new Error('Failed to load Tesseract.js'));
+    document.head.appendChild(script);
+  });
 }
 
-// Process receipt with Google Cloud Vision
-router.post('/process', async (req, res) => {
-  if (!visionClient) {
-    return res.status(503).json({ 
-      error: 'OCR service not configured',
-      fallback: true 
-    });
-  }
-
+// Process receipt image with OCR - Simple version
+async function processReceipt(imageFile, progressCallback) {
   try {
-    const { image } = req.body; // Base64 image
+    if (progressCallback) progressCallback(10);
     
-    if (!image) {
-      return res.status(400).json({ error: 'No image provided' });
-    }
-
-    // Call Google Vision API
-    const [result] = await visionClient.documentTextDetection({
-      image: { content: Buffer.from(image, 'base64') }
+    const Tesseract = await loadTesseract();
+    
+    if (progressCallback) progressCallback(30);
+    
+    const worker = await Tesseract.createWorker();
+    
+    if (progressCallback) progressCallback(40);
+    
+    await worker.loadLanguage('eng');
+    
+    if (progressCallback) progressCallback(50);
+    
+    await worker.initialize('eng');
+    
+    if (progressCallback) progressCallback(60);
+    
+    await worker.setParameters({
+      tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz .,/$%-+',
     });
 
-    const fullText = result.fullTextAnnotation?.text || '';
-    const blocks = result.fullTextAnnotation?.pages?.[0]?.blocks || [];
+    if (progressCallback) progressCallback(70);
 
-    // Parse the structured text
-    const parsed = parseReceiptFromVision(fullText, blocks);
+    const { data } = await worker.recognize(imageFile);
+    
+    if (progressCallback) progressCallback(90);
 
-    res.json({
+    await worker.terminate();
+
+    const parsedData = parseReceiptText(data.text);
+    
+    if (progressCallback) progressCallback(100);
+    
+    return {
       success: true,
-      raw_text: fullText,
-      parsed: parsed
-    });
-
+      raw_text: data.text,
+      parsed: parsedData
+    };
   } catch (error) {
-    console.error('Google Vision error:', error);
-    res.status(500).json({ 
-      error: error.message,
-      fallback: true 
-    });
+    console.error('OCR Error:', error);
+    return {
+      success: false,
+      error: error.message
+    };
   }
-});
+}
 
-// Advanced receipt parsing using Vision API's structured output
-function parseReceiptFromVision(text, blocks) {
+// Parse receipt text (basic version for fallback)
+function parseReceiptText(text) {
   const lines = text.split('\n').filter(l => l.trim());
   const items = [];
-  let total = null;
-  let tax = null;
-  let serviceCharge = null;
-
-  // Patterns for Indonesian receipts
-  const pricePattern = /(?:IDR|Rp\.?)?\s*(\d{1,3}(?:[,\.]\d{3})*(?:[,\.]\d{2}))/;
-  const totalPattern = /\b(total|grand\s*total|amount)\b/i;
-  const taxPattern = /\b(pb1|ppn|tax|pajak)\s*\(?(\d+[,\.]?\d*%?)\)?/i;
-  const servicePattern = /\b(service|srv|layanan)\b/i;
-
-  // Skip patterns
-  const skipPatterns = [
-    /^(subtotal|date|time|table|outlet|store|cashier|number|pc\d+)/i,
-    /^[\d\s\-\/\:]+$/, // Pure numbers/dates
-    /temporary/i
-  ];
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
-    
-    if (!line || line.length < 3) continue;
-
-    // Skip headers/footers
-    if (skipPatterns.some(p => p.test(line))) continue;
-
-    // Check for total
-    if (totalPattern.test(line)) {
-      const match = line.match(pricePattern);
-      if (match) {
-        total = parseIndonesianPrice(match[1]);
+  
+  const pricePattern = /(\d{1,3}(?:[,\.]\d{3})*(?:[,\.]\d{2}))/;
+  
+  for (const line of lines) {
+    const match = line.match(pricePattern);
+    if (match) {
+      const priceStr = match[1];
+      let cleaned = priceStr.replace(/[,\.]/g, '');
+      
+      if (cleaned.length >= 2) {
+        cleaned = cleaned.slice(0, -2) + '.' + cleaned.slice(-2);
       }
-      continue;
-    }
-
-    // Check for tax
-    if (taxPattern.test(line)) {
-      const match = line.match(pricePattern);
-      if (match) {
-        const amount = parseIndonesianPrice(match[1]);
-        if (amount > 0) {
-          tax = { name: 'Tax (PB1)', amount };
-        }
-      }
-      continue;
-    }
-
-    // Check for service
-    if (servicePattern.test(line)) {
-      const match = line.match(pricePattern);
-      if (match) {
-        const amount = parseIndonesianPrice(match[1]);
-        if (amount > 0) {
-          serviceCharge = { name: 'Service Charge', amount };
-        }
-      }
-      continue;
-    }
-
-    // Extract items with prices
-    const priceMatches = [...line.matchAll(new RegExp(pricePattern.source, 'g'))];
-    
-    if (priceMatches.length >= 1) {
-      // Take the rightmost price (usually the line total)
-      const lastPrice = priceMatches[priceMatches.length - 1][1];
-      const price = parseIndonesianPrice(lastPrice);
-
-      if (price > 0 && (!total || price <= total * 0.8)) {
-        // Extract item name
-        let name = line;
-        priceMatches.forEach(m => {
-          name = name.replace(m[0], '');
-        });
-        
-        // Clean item name
-        name = name
-          .replace(/^\d+\s+/, '') // Remove quantity prefix
-          .replace(/[@#]/g, '')
-          .replace(/\s+/g, ' ')
-          .trim();
-
-        if (name.length >= 3 && !/^[\d\s\.,@]+$/.test(name)) {
-          items.push({ name, price });
-        }
+      
+      const price = parseFloat(cleaned);
+      let name = line.replace(match[0], '').trim();
+      
+      if (name.length >= 3 && price > 0) {
+        items.push({ name, price });
       }
     }
   }
-
+  
   return {
     items,
-    charges: { tax, serviceCharge, gratuity: null },
-    total
+    charges: { tax: null, serviceCharge: null, gratuity: null },
+    total: null
   };
 }
 
-// Parse Indonesian price format (380,000.00 or 380.000,00)
-function parseIndonesianPrice(priceStr) {
-  // Remove currency symbols and spaces
-  let cleaned = priceStr.replace(/[^\d,\.]/g, '');
-  
-  // Count separators to determine format
-  const commas = (cleaned.match(/,/g) || []).length;
-  const dots = (cleaned.match(/\./g) || []).length;
-  
-  // If multiple commas/dots, they're thousand separators
-  if (commas > 1 || dots > 1) {
-    // Remove thousand separators, keep last one as decimal
-    if (commas > dots) {
-      cleaned = cleaned.replace(/\./g, '').replace(/,/g, '.');
-    } else {
-      cleaned = cleaned.replace(/,/g, '');
-    }
-  } else if (commas === 1 && dots === 0) {
-    // Single comma might be decimal
-    cleaned = cleaned.replace(',', '.');
-  } else if (commas === 0 && dots === 1) {
-    // Already correct format
-  } else {
-    // No decimal separator, assume it's in cents (38000 = 380.00)
-    if (cleaned.length > 2) {
-      cleaned = cleaned.slice(0, -2) + '.' + cleaned.slice(-2);
-    }
-  }
-  
-  return parseFloat(cleaned) || 0;
+function formatCurrency(amount) {
+  return amount.toFixed(2);
 }
 
-// Make functions available globally for browser
+function previewImage(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => resolve(e.target.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+// Export to global scope
 window.OCR = {
   processReceipt: processReceipt,
   parseReceiptText: parseReceiptText,
   formatCurrency: formatCurrency,
   previewImage: previewImage
 };
-
-module.exports = router;

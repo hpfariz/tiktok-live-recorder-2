@@ -9,8 +9,8 @@ const BASE_PATH = '/split-bill';
 
 // Middleware
 app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Ensure required directories exist
 const uploadsDir = path.join(__dirname, 'uploads');
@@ -114,14 +114,6 @@ process.on('SIGINT', () => {
   console.log('\nSIGINT received, shutting down gracefully...');
   process.exit(0);
 });
-
-// OCR route (if Google Vision is configured)
-try {
-  const ocrRoutes = require('./routes/ocr');
-  splitBillRouter.use('/api/ocr', ocrRoutes);
-} catch (error) {
-  console.log('OCR routes not available:', error.message);
-}
 
 // Start server
 const server = app.listen(PORT, '0.0.0.0', () => {
