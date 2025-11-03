@@ -23,7 +23,14 @@ async function processReceipt(imageFile, progressCallback) {
   try {
     const Tesseract = await loadTesseract();
     
-    const worker = await Tesseract.createWorker();
+    const worker = await Tesseract.createWorker({
+      logger: m => {
+        // Handle progress updates
+        if (progressCallback && m.status === 'recognizing text') {
+          progressCallback(Math.round(m.progress * 100));
+        }
+      }
+    });
     
     await worker.loadLanguage('eng');
     await worker.initialize('eng');
@@ -33,13 +40,7 @@ async function processReceipt(imageFile, progressCallback) {
       tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz .,/$%-+',
     });
 
-    const { data } = await worker.recognize(imageFile, {
-      logger: (m) => {
-        if (progressCallback && m.status === 'recognizing text') {
-          progressCallback(Math.round(m.progress * 100));
-        }
-      }
-    });
+    const { data } = await worker.recognize(imageFile);
 
     await worker.terminate();
 
