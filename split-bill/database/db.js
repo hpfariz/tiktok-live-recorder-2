@@ -57,7 +57,7 @@ db.exec(`
     id TEXT PRIMARY KEY,
     item_id TEXT NOT NULL,
     participant_id TEXT NOT NULL,
-    split_type TEXT NOT NULL CHECK(split_type IN ('equal', 'fixed', 'percent')),
+    split_type TEXT NOT NULL CHECK(split_type IN ('equal', 'fixed', 'percent', 'quantity')),
     value REAL NOT NULL,
     FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE,
     FOREIGN KEY (participant_id) REFERENCES participants(id) ON DELETE CASCADE
