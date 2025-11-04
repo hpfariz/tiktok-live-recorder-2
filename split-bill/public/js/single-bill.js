@@ -498,7 +498,7 @@ function renderSplitItems() {
     const qtyText = (item.quantity && item.quantity > 1 && item.unit_price) 
     ? ` (${item.quantity}x ${billData.currency_symbol}${item.unit_price.toFixed(2)})` 
     : '';
-    
+
     return `
     <div class="item-list-item">
         <div class="flex-between">
@@ -538,6 +538,7 @@ async function saveTaxDistribution() {
   const type = document.getElementById('tax-distribution-type').value;
   
   try {
+    // Save distribution type
     const response = await fetch(`${API_BASE}/api/bills/item/${currentTaxItem.id}/tax-distribution`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -547,6 +548,24 @@ async function saveTaxDistribution() {
     });
     
     if (!response.ok) throw new Error('Failed to save distribution');
+    
+    // Create splits for all participants based on distribution type
+    if (type === 'equal' || type === 'proportional') {
+      // For equal and proportional, add all participants
+      // The backend will calculate the amounts correctly
+      for (const participant of participants) {
+        await fetch(`${API_BASE}/api/bills/item/${currentTaxItem.id}/split`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            participant_id: participant.id,
+            split_type: 'equal', // Equal split for tax, backend handles distribution
+            value: 1
+          })
+        });
+      }
+    }
+    // For 'none' type, don't create any splits
     
     currentTaxItem.tax_distribution = type;
     closeTaxModal();

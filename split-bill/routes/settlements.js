@@ -61,8 +61,97 @@ router.get('/:billId', (req, res) => {
                 }
               }
               continue;
+            } else if (taxDist.distribution_type === 'proportional') {
+              // PROPORTIONAL: Distribute tax based on each participant's subtotal
+              
+              const participantSubtotals = {};
+              let totalSubtotal = 0;
+              
+              // Initialize all participants
+              for (const p of participants) {
+                participantSubtotals[p.id] = 0;
+              }
+              
+              // Get all regular (non-tax) items from the same receipt
+              const regularItems = db.prepare(`
+                SELECT i.* FROM items i
+                WHERE i.receipt_id = ? AND i.is_tax_or_charge = 0
+              `).all(item.receipt_id);
+              
+              // Calculate each participant's subtotal
+              for (const regItem of regularItems) {
+                const regSplits = db.prepare(`
+                  SELECT * FROM item_splits WHERE item_id = ?
+                `).all(regItem.id);
+                
+                if (regSplits.length === 0) continue;
+                
+                // Use same smart split logic
+                const fixedSplits = regSplits.filter(s => s.split_type === 'fixed');
+                const qtySplits = regSplits.filter(s => s.split_type === 'quantity');
+                const percentSplits = regSplits.filter(s => s.split_type === 'percent');
+                const equalSplits = regSplits.filter(s => s.split_type === 'equal');
+                
+                let remaining = regItem.price;
+                
+                // Fixed amounts
+                for (const split of fixedSplits) {
+                  if (participantSubtotals[split.participant_id] !== undefined) {
+                    participantSubtotals[split.participant_id] += split.value;
+                  }
+                  remaining -= split.value;
+                }
+                
+                // Quantity splits
+                if (regItem.quantity && qtySplits.length > 0) {
+                  const unitPrice = regItem.price / regItem.quantity;
+                  for (const split of qtySplits) {
+                    if (participantSubtotals[split.participant_id] !== undefined) {
+                      const amount = unitPrice * split.value;
+                      participantSubtotals[split.participant_id] += amount;
+                      remaining -= amount;
+                    }
+                  }
+                }
+                
+                // Percentage splits
+                for (const split of percentSplits) {
+                  if (participantSubtotals[split.participant_id] !== undefined) {
+                    const amount = (remaining * split.value) / 100;
+                    participantSubtotals[split.participant_id] += amount;
+                    remaining -= amount;
+                  }
+                }
+                
+                // Equal splits
+                if (equalSplits.length > 0) {
+                  const equalAmount = remaining / equalSplits.length;
+                  for (const split of equalSplits) {
+                    if (participantSubtotals[split.participant_id] !== undefined) {
+                      participantSubtotals[split.participant_id] += equalAmount;
+                    }
+                  }
+                }
+              }
+              
+              // Calculate total subtotal
+              for (const pId in participantSubtotals) {
+                totalSubtotal += participantSubtotals[pId];
+              }
+              
+              // Distribute tax proportionally based on subtotal
+              if (totalSubtotal > 0) {
+                for (const pId in participantSubtotals) {
+                  if (participantSubtotals[pId] > 0 && balances[pId]) {
+                    const proportion = participantSubtotals[pId] / totalSubtotal;
+                    const taxAmount = itemAmount * proportion;
+                    balances[pId].owes += taxAmount;
+                  }
+                }
+              }
+              continue; // Skip the normal split processing below
             }
-            // For 'equal' and 'proportional', we handle them with splits
+            // For 'equal', fall through to normal split processing
           }
         }
         
