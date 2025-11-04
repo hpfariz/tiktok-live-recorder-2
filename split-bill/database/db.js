@@ -68,8 +68,10 @@ db.exec(`
     bill_id TEXT NOT NULL,
     payer_id TEXT NOT NULL,
     amount REAL NOT NULL,
+    receipt_id TEXT,
     FOREIGN KEY (bill_id) REFERENCES bills(id) ON DELETE CASCADE,
-    FOREIGN KEY (payer_id) REFERENCES participants(id) ON DELETE CASCADE
+    FOREIGN KEY (payer_id) REFERENCES participants(id) ON DELETE CASCADE,
+    FOREIGN KEY (receipt_id) REFERENCES receipts(id) ON DELETE SET NULL
   );
 
   CREATE TABLE IF NOT EXISTS tax_distribution (
@@ -86,6 +88,7 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_participants_bill ON participants(bill_id);
   CREATE INDEX IF NOT EXISTS idx_item_splits_item ON item_splits(item_id);
   CREATE INDEX IF NOT EXISTS idx_payments_bill ON payments(bill_id);
+  CREATE INDEX IF NOT EXISTS idx_payments_receipt ON payments(receipt_id);
 `);
 
 console.log('✅ Database initialized successfully');
