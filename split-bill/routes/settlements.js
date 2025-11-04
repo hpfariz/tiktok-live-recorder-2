@@ -361,6 +361,18 @@ router.get('/:billId/participant/:participantId', (req, res) => {
         amount = item.split_value;
       } else if (item.split_type === 'percent') {
         amount = (item.item_price * item.split_value) / 100;
+      } else if (item.split_type === 'quantity') {
+        // Get the item details to find unit price
+        const itemDetails = db.prepare(`
+          SELECT i.* FROM items i
+          JOIN receipts r ON i.receipt_id = r.id
+          WHERE i.name = ? AND i.price = ? AND r.id = ?
+        `).get(item.item_name, item.item_price, item.receipt_id);
+        
+        if (itemDetails && itemDetails.quantity && itemDetails.quantity > 0) {
+          const unitPrice = itemDetails.price / itemDetails.quantity;
+          amount = unitPrice * item.split_value;
+        }
       }
       
       total += amount;
