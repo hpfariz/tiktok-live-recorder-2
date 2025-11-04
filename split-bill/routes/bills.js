@@ -468,7 +468,7 @@ router.post('/:id/duplicate', (req, res) => {
         
         db.prepare(`
           INSERT INTO items (id, receipt_id, name, price, is_tax_or_charge, charge_type, item_order, quantity, unit_price)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
           newItemId, 
           newReceiptId, 
