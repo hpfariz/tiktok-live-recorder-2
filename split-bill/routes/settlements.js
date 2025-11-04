@@ -41,7 +41,7 @@ router.get('/:billId', (req, res) => {
           WHERE s.item_id = ?
         `).all(item.id);
         
-        if (splits.length === 0) continue;
+        if (splits.length === 0 && !item.is_tax_or_charge) continue;
         
         let itemAmount = item.price;
         
@@ -152,6 +152,92 @@ router.get('/:billId', (req, res) => {
               continue; // Skip the normal split processing below
             }
             // For 'equal', fall through to normal split processing
+          } else if (splits.length === 0) {
+            // Tax item has no distribution config and no splits
+            // Default to proportional distribution
+            console.log(`Tax item "${item.name}" has no configuration, defaulting to proportional`);
+            
+            const participantSubtotals = {};
+            let totalSubtotal = 0;
+            
+            // Initialize all participants
+            for (const p of participants) {
+              participantSubtotals[p.id] = 0;
+            }
+            
+            // Get all regular (non-tax) items from the same receipt
+            const regularItems = db.prepare(`
+              SELECT i.* FROM items i
+              WHERE i.receipt_id = ? AND i.is_tax_or_charge = 0
+            `).all(item.receipt_id);
+            
+            // Calculate each participant's subtotal
+            for (const regItem of regularItems) {
+              const regSplits = db.prepare(`
+                SELECT * FROM item_splits WHERE item_id = ?
+              `).all(regItem.id);
+              
+              if (regSplits.length === 0) continue;
+              
+              const fixedSplits = regSplits.filter(s => s.split_type === 'fixed');
+              const qtySplits = regSplits.filter(s => s.split_type === 'quantity');
+              const percentSplits = regSplits.filter(s => s.split_type === 'percent');
+              const equalSplits = regSplits.filter(s => s.split_type === 'equal');
+              
+              let remaining = regItem.price;
+              
+              for (const split of fixedSplits) {
+                if (participantSubtotals[split.participant_id] !== undefined) {
+                  participantSubtotals[split.participant_id] += split.value;
+                }
+                remaining -= split.value;
+              }
+              
+              if (regItem.quantity && qtySplits.length > 0) {
+                const unitPrice = regItem.price / regItem.quantity;
+                for (const split of qtySplits) {
+                  if (participantSubtotals[split.participant_id] !== undefined) {
+                    const amount = unitPrice * split.value;
+                    participantSubtotals[split.participant_id] += amount;
+                    remaining -= amount;
+                  }
+                }
+              }
+              
+              for (const split of percentSplits) {
+                if (participantSubtotals[split.participant_id] !== undefined) {
+                  const amount = (remaining * split.value) / 100;
+                  participantSubtotals[split.participant_id] += amount;
+                  remaining -= amount;
+                }
+              }
+              
+              if (equalSplits.length > 0) {
+                const equalAmount = remaining / equalSplits.length;
+                for (const split of equalSplits) {
+                  if (participantSubtotals[split.participant_id] !== undefined) {
+                    participantSubtotals[split.participant_id] += equalAmount;
+                  }
+                }
+              }
+            }
+            
+            // Calculate total subtotal
+            for (const pId in participantSubtotals) {
+              totalSubtotal += participantSubtotals[pId];
+            }
+            
+            // Distribute tax proportionally based on subtotal
+            if (totalSubtotal > 0) {
+              for (const pId in participantSubtotals) {
+                if (participantSubtotals[pId] > 0 && balances[pId]) {
+                  const proportion = participantSubtotals[pId] / totalSubtotal;
+                  const taxAmount = itemAmount * proportion;
+                  balances[pId].owes += taxAmount;
+                }
+              }
+            }
+            continue; // Skip the normal split processing below
           }
         }
         
@@ -311,7 +397,7 @@ function optimizeSettlements(balances) {
   return settlements;
 }
 
-// Get item breakdown for a participant
+// Get item breakdown for a participant - UPDATED TO INCLUDE TAX ITEMS
 router.get('/:billId/participant/:participantId', (req, res) => {
   const { billId, participantId } = req.params;
   
@@ -324,12 +410,17 @@ router.get('/:billId/participant/:participantId', (req, res) => {
     }
     
     const bill = db.prepare('SELECT * FROM bills WHERE id = ?').get(billId);
+    const receipts = db.prepare('SELECT * FROM receipts WHERE bill_id = ?').all(billId);
     
     // Get all items this participant is splitting
     const itemBreakdown = db.prepare(`
       SELECT 
+        i.id as item_id,
         i.name as item_name,
         i.price as item_price,
+        i.is_tax_or_charge,
+        i.quantity,
+        i.unit_price,
         s.split_type,
         s.value as split_value,
         r.id as receipt_id
@@ -344,94 +435,19 @@ router.get('/:billId/participant/:participantId', (req, res) => {
     const breakdown = [];
     let total = 0;
     
+    // Track which receipts we've seen
+    const processedReceipts = new Set();
+    
     for (const item of itemBreakdown) {
       let amount = 0;
       
-      // Get the full item details to check if it's a tax item
-      const fullItem = db.prepare(`
-        SELECT i.* FROM items i
-        JOIN receipts r ON i.receipt_id = r.id
-        WHERE i.name = ? AND i.price = ? AND r.id = ?
-      `).get(item.item_name, item.item_price, item.receipt_id);
-      
       // Check if this is a tax/charge item with special distribution
-      if (fullItem && fullItem.is_tax_or_charge) {
-        const taxDist = db.prepare('SELECT * FROM tax_distribution WHERE item_id = ?').get(fullItem.id);
+      if (item.is_tax_or_charge) {
+        const taxDist = db.prepare('SELECT * FROM tax_distribution WHERE item_id = ?').get(item.item_id);
         
         if (taxDist && taxDist.distribution_type === 'proportional') {
           // PROPORTIONAL TAX: Calculate this participant's share based on their subtotal
-          
-          // Get all regular items from the same receipt
-          const regularItems = db.prepare(`
-            SELECT i.* FROM items i
-            WHERE i.receipt_id = ? AND i.is_tax_or_charge = 0
-          `).all(item.receipt_id);
-          
-          // Calculate this participant's subtotal
-          let participantSubtotal = 0;
-          let totalSubtotal = 0;
-          
-          for (const regItem of regularItems) {
-            const regSplits = db.prepare(`
-              SELECT * FROM item_splits WHERE item_id = ?
-            `).all(regItem.id);
-            
-            if (regSplits.length === 0) continue;
-            
-            // Calculate amounts for each split using the same smart logic
-            const fixedSplits = regSplits.filter(s => s.split_type === 'fixed');
-            const qtySplits = regSplits.filter(s => s.split_type === 'quantity');
-            const percentSplits = regSplits.filter(s => s.split_type === 'percent');
-            const equalSplits = regSplits.filter(s => s.split_type === 'equal');
-            
-            let remaining = regItem.price;
-            
-            // Process each participant's splits
-            for (const split of regSplits) {
-              let splitAmount = 0;
-              
-              if (split.split_type === 'fixed') {
-                splitAmount = split.value;
-              } else if (split.split_type === 'quantity' && regItem.quantity) {
-                const unitPrice = regItem.price / regItem.quantity;
-                splitAmount = unitPrice * split.value;
-              }
-              
-              if (split.participant_id === participantId) {
-                participantSubtotal += splitAmount;
-              }
-              totalSubtotal += splitAmount;
-            }
-            
-            // Handle percentages
-            for (const split of percentSplits) {
-              const splitAmount = (remaining * split.value) / 100;
-              if (split.participant_id === participantId) {
-                participantSubtotal += splitAmount;
-              }
-              totalSubtotal += splitAmount;
-              remaining -= splitAmount;
-            }
-            
-            // Handle equal splits
-            if (equalSplits.length > 0) {
-              const equalAmount = remaining / equalSplits.length;
-              for (const split of equalSplits) {
-                if (split.participant_id === participantId) {
-                  participantSubtotal += equalAmount;
-                }
-                totalSubtotal += equalAmount;
-              }
-            }
-          }
-          
-          // Calculate proportional tax amount
-          if (totalSubtotal > 0 && participantSubtotal > 0) {
-            const proportion = participantSubtotal / totalSubtotal;
-            amount = fullItem.price * proportion;
-          } else {
-            amount = 0; // No subtotal = no tax
-          }
+          amount = calculateProportionalTax(item.receipt_id, participantId, item.item_price);
           
           total += amount;
           
@@ -443,7 +459,8 @@ router.get('/:billId/participant/:participantId', (req, res) => {
             amount: Math.round(amount * 100) / 100
           });
           
-          continue; // Skip normal calculation
+          processedReceipts.add(item.receipt_id);
+          continue;
         }
       }
       
@@ -452,9 +469,8 @@ router.get('/:billId/participant/:participantId', (req, res) => {
       const splitCount = db.prepare(`
         SELECT COUNT(*) as count
         FROM item_splits s
-        JOIN items i ON s.item_id = i.id
-        WHERE i.name = ? AND i.price = ? AND i.receipt_id = ?
-      `).get(item.item_name, item.item_price, item.receipt_id).count;
+        WHERE s.item_id = ?
+      `).get(item.item_id).count;
       
       if (item.split_type === 'equal') {
         amount = item.item_price / splitCount;
@@ -463,8 +479,8 @@ router.get('/:billId/participant/:participantId', (req, res) => {
       } else if (item.split_type === 'percent') {
         amount = (item.item_price * item.split_value) / 100;
       } else if (item.split_type === 'quantity') {
-        if (fullItem && fullItem.quantity && fullItem.quantity > 0) {
-          const unitPrice = fullItem.price / fullItem.quantity;
+        if (item.quantity && item.quantity > 0) {
+          const unitPrice = item.item_price / item.quantity;
           amount = unitPrice * item.split_value;
         }
       }
@@ -478,6 +494,53 @@ router.get('/:billId/participant/:participantId', (req, res) => {
         split_value: item.split_value,
         amount: Math.round(amount * 100) / 100
       });
+      
+      processedReceipts.add(item.receipt_id);
+    }
+    
+    // NOW CHECK FOR UNCONFIGURED TAX ITEMS IN RECEIPTS THIS PARTICIPANT IS PART OF
+    for (const receipt of receipts) {
+      if (!processedReceipts.has(receipt.id)) {
+        // Check if this participant has any items in this receipt
+        const participantInReceipt = db.prepare(`
+          SELECT COUNT(*) as count
+          FROM item_splits s
+          JOIN items i ON s.item_id = i.id
+          WHERE i.receipt_id = ? AND s.participant_id = ? AND i.is_tax_or_charge = 0
+        `).get(receipt.id, participantId).count;
+        
+        if (participantInReceipt > 0) {
+          processedReceipts.add(receipt.id);
+          
+          // Get unconfigured tax items from this receipt
+          const taxItems = db.prepare(`
+            SELECT i.id, i.name, i.price, i.is_tax_or_charge
+            FROM items i
+            LEFT JOIN tax_distribution t ON i.id = t.item_id
+            LEFT JOIN item_splits s ON i.id = s.item_id
+            WHERE i.receipt_id = ? AND i.is_tax_or_charge = 1
+            GROUP BY i.id
+            HAVING COUNT(s.id) = 0
+          `).all(receipt.id);
+          
+          for (const taxItem of taxItems) {
+            // Calculate proportional tax for unconfigured items
+            const amount = calculateProportionalTax(receipt.id, participantId, taxItem.price);
+            
+            if (amount > 0) {
+              total += amount;
+              
+              breakdown.push({
+                item_name: taxItem.name,
+                item_price: Math.round(taxItem.price * 100) / 100,
+                split_type: 'proportional',
+                split_value: null,
+                amount: Math.round(amount * 100) / 100
+              });
+            }
+          }
+        }
+      }
     }
     
     res.json({
@@ -491,5 +554,98 @@ router.get('/:billId/participant/:participantId', (req, res) => {
     res.status(500).json({ error: 'Failed to get breakdown' });
   }
 });
+
+// Helper function to calculate proportional tax
+function calculateProportionalTax(receiptId, participantId, taxAmount) {
+  const participantSubtotals = {};
+  let totalSubtotal = 0;
+  
+  // Get all regular (non-tax) items from the receipt
+  const regularItems = db.prepare(`
+    SELECT i.* FROM items i
+    WHERE i.receipt_id = ? AND i.is_tax_or_charge = 0
+  `).all(receiptId);
+  
+  // Get all participants in this receipt
+  const participantsInReceipt = db.prepare(`
+    SELECT DISTINCT s.participant_id
+    FROM item_splits s
+    JOIN items i ON s.item_id = i.id
+    WHERE i.receipt_id = ? AND i.is_tax_or_charge = 0
+  `).all(receiptId);
+  
+  // Initialize subtotals
+  for (const p of participantsInReceipt) {
+    participantSubtotals[p.participant_id] = 0;
+  }
+  
+  // Calculate each participant's subtotal
+  for (const item of regularItems) {
+    const splits = db.prepare(`
+      SELECT * FROM item_splits WHERE item_id = ?
+    `).all(item.id);
+    
+    if (splits.length === 0) continue;
+    
+    const fixedSplits = splits.filter(s => s.split_type === 'fixed');
+    const qtySplits = splits.filter(s => s.split_type === 'quantity');
+    const percentSplits = splits.filter(s => s.split_type === 'percent');
+    const equalSplits = splits.filter(s => s.split_type === 'equal');
+    
+    let remaining = item.price;
+    
+    // Process fixed amounts
+    for (const split of fixedSplits) {
+      if (participantSubtotals[split.participant_id] !== undefined) {
+        participantSubtotals[split.participant_id] += split.value;
+      }
+      remaining -= split.value;
+    }
+    
+    // Process quantity splits
+    if (item.quantity && qtySplits.length > 0) {
+      const unitPrice = item.price / item.quantity;
+      for (const split of qtySplits) {
+        if (participantSubtotals[split.participant_id] !== undefined) {
+          const amount = unitPrice * split.value;
+          participantSubtotals[split.participant_id] += amount;
+          remaining -= amount;
+        }
+      }
+    }
+    
+    // Process percentages
+    for (const split of percentSplits) {
+      if (participantSubtotals[split.participant_id] !== undefined) {
+        const amount = (remaining * split.value) / 100;
+        participantSubtotals[split.participant_id] += amount;
+        remaining -= amount;
+      }
+    }
+    
+    // Process equal splits
+    if (equalSplits.length > 0) {
+      const equalAmount = remaining / equalSplits.length;
+      for (const split of equalSplits) {
+        if (participantSubtotals[split.participant_id] !== undefined) {
+          participantSubtotals[split.participant_id] += equalAmount;
+        }
+      }
+    }
+  }
+  
+  // Calculate total subtotal
+  for (const pId in participantSubtotals) {
+    totalSubtotal += participantSubtotals[pId];
+  }
+  
+  // Calculate proportional tax for this participant
+  if (totalSubtotal > 0 && participantSubtotals[participantId] > 0) {
+    const proportion = participantSubtotals[participantId] / totalSubtotal;
+    return taxAmount * proportion;
+  }
+  
+  return 0;
+}
 
 module.exports = router;
