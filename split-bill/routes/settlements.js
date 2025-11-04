@@ -353,22 +353,37 @@ router.get('/:billId', (req, res) => {
 
 // Optimize settlements to minimize transactions
 function optimizeSettlements(balances) {
-  // Create copies to work with
-  const creditors = balances.filter(p => p.paid - p.owes > 0.01)
-    .map(p => ({ ...p, amount: p.paid - p.owes }));
-  const debtors = balances.filter(p => p.paid - p.owes < -0.01)
-    .map(p => ({ ...p, amount: -(p.paid - p.owes) }));
+  // Create deep copies with initial amounts
+  const creditors = [];
+  const debtors = [];
+  
+  for (const person of balances) {
+    const netBalance = person.paid - person.owes;
+    if (netBalance > 0.01) {
+      creditors.push({
+        id: person.id,
+        name: person.name,
+        amount: netBalance
+      });
+    } else if (netBalance < -0.01) {
+      debtors.push({
+        id: person.id,
+        name: person.name,
+        amount: -netBalance
+      });
+    }
+  }
+  
+  // Sort by amount descending (largest first)
+  creditors.sort((a, b) => b.amount - a.amount);
+  debtors.sort((a, b) => b.amount - a.amount);
   
   const settlements = [];
+  let i = 0, j = 0;
   
-  // Greedy algorithm: match largest debtor with largest creditor
-  while (creditors.length > 0 && debtors.length > 0) {
-    // Sort by amount descending
-    creditors.sort((a, b) => b.amount - a.amount);
-    debtors.sort((a, b) => b.amount - a.amount);
-    
-    const creditor = creditors[0];
-    const debtor = debtors[0];
+  while (i < creditors.length && j < debtors.length) {
+    const creditor = creditors[i];
+    const debtor = debtors[j];
     
     const settleAmount = Math.min(creditor.amount, debtor.amount);
     
@@ -385,13 +400,9 @@ function optimizeSettlements(balances) {
       debtor.amount -= settleAmount;
     }
     
-    // Remove settled parties
-    if (creditor.amount < 0.01) {
-      creditors.shift();
-    }
-    if (debtor.amount < 0.01) {
-      debtors.shift();
-    }
+    // Move to next person if current one is settled
+    if (creditor.amount < 0.01) i++;
+    if (debtor.amount < 0.01) j++;
   }
   
   return settlements;

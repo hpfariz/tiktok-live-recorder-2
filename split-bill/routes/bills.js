@@ -467,7 +467,7 @@ router.post('/:id/duplicate', (req, res) => {
         const newItemId = nanoid(10);
         
         db.prepare(`
-          INSERT INTO items (id, receipt_id, name, price, is_tax_or_charge, charge_type, item_order)
+          INSERT INTO items (id, receipt_id, name, price, is_tax_or_charge, charge_type, item_order, quantity, unit_price)
           VALUES (?, ?, ?, ?, ?, ?, ?)
         `).run(
           newItemId, 
@@ -476,7 +476,9 @@ router.post('/:id/duplicate', (req, res) => {
           item.price, 
           item.is_tax_or_charge,
           item.charge_type,
-          item.item_order
+          item.item_order,
+          item.quantity || 1,
+          item.unit_price || null
         );
         
         // Copy splits
