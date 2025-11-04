@@ -192,7 +192,10 @@ router.delete('/receipt/:receiptId', (req, res) => {
         console.error(`Failed to delete file ${fullPath}:`, err.message);
       }
     }
-    
+
+    // Delete any payments associated with this receipt
+    db.prepare('DELETE FROM payments WHERE receipt_id = ?').run(receiptId);
+
     // Delete receipt from database (cascades to items, splits, etc.)
     db.prepare('DELETE FROM receipts WHERE id = ?').run(receiptId);
     
@@ -376,24 +379,29 @@ router.post('/item/:itemId/tax-distribution', (req, res) => {
   }
 });
 
-// Add payment
+// Add payment (UPDATED to support receipt_id and prevent duplicates)
 router.post('/:id/payment', (req, res) => {
   const { id } = req.params;
-  const { payer_id, amount } = req.body;
+  const { payer_id, amount, receipt_id } = req.body;
   
   if (!payer_id || amount === undefined) {
     return res.status(400).json({ error: 'Payer and amount are required' });
   }
   
   try {
+    // If receipt_id is provided, delete existing payment for that receipt
+    if (receipt_id) {
+      db.prepare('DELETE FROM payments WHERE receipt_id = ?').run(receipt_id);
+    }
+    
     const paymentId = nanoid(10);
     
     db.prepare(`
-      INSERT INTO payments (id, bill_id, payer_id, amount)
-      VALUES (?, ?, ?, ?)
-    `).run(paymentId, id, payer_id, parseFloat(amount));
+      INSERT INTO payments (id, bill_id, payer_id, amount, receipt_id)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(paymentId, id, payer_id, parseFloat(amount), receipt_id || null);
     
-    res.json({ id: paymentId, bill_id: id, payer_id, amount: parseFloat(amount) });
+    res.json({ id: paymentId, bill_id: id, payer_id, amount: parseFloat(amount), receipt_id });
   } catch (error) {
     console.error('Error adding payment:', error);
     res.status(500).json({ error: 'Failed to add payment' });

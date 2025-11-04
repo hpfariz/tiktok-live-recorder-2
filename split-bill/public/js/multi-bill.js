@@ -867,7 +867,8 @@ async function saveReceiptConfiguration() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           payer_id: payerId,
-          amount: total
+          amount: total,
+          receipt_id: currentReceipt.id
         })
       });
     }
