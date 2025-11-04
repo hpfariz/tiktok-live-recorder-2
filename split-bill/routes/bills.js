@@ -169,6 +169,40 @@ router.post('/:id/receipt', upload.single('receipt'), (req, res) => {
   }
 });
 
+// Delete receipt
+router.delete('/receipt/:receiptId', (req, res) => {
+  const { receiptId } = req.params;
+  
+  try {
+    // Get receipt to check if it has an image file
+    const receipt = db.prepare('SELECT * FROM receipts WHERE id = ?').get(receiptId);
+    
+    if (!receipt) {
+      return res.status(404).json({ error: 'Receipt not found' });
+    }
+    
+    // Delete image file if it exists
+    if (receipt.image_path) {
+      const fullPath = path.join(__dirname, '..', receipt.image_path);
+      try {
+        if (fs.existsSync(fullPath)) {
+          fs.unlinkSync(fullPath);
+        }
+      } catch (err) {
+        console.error(`Failed to delete file ${fullPath}:`, err.message);
+      }
+    }
+    
+    // Delete receipt from database (cascades to items, splits, etc.)
+    db.prepare('DELETE FROM receipts WHERE id = ?').run(receiptId);
+    
+    res.json({ success: true, message: 'Receipt deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting receipt:', error);
+    res.status(500).json({ error: 'Failed to delete receipt' });
+  }
+});
+
 // Add item to receipt
 router.post('/:id/receipt/:receiptId/item', (req, res) => {
   const { receiptId } = req.params;

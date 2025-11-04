@@ -1,4 +1,4 @@
-// Multi-Bill JavaScript - Enhanced with Full Split Configuration
+// Multi-Bill JavaScript - Complete with Deletion Features
 const BASE_PATH = window.location.pathname.match(/^\/[^\/]+/)?.[0] || '';
 const API_BASE = window.location.origin + BASE_PATH;
 
@@ -431,6 +431,52 @@ function renderReceipts() {
   }).join('');
 }
 
+// Delete receipt
+async function deleteReceipt(index) {
+  const receipt = receipts[index];
+  
+  if (!confirm('Delete this receipt and all its items? This cannot be undone.')) return;
+  
+  try {
+    const response = await fetch(`${API_BASE}/api/bills/receipt/${receipt.id}`, {
+      method: 'DELETE'
+    });
+    
+    if (!response.ok) throw new Error('Failed to delete receipt');
+    
+    // Reload bill data
+    await loadBill();
+    renderReceipts();
+  } catch (error) {
+    console.error('Error deleting receipt:', error);
+    alert('Failed to delete receipt');
+  }
+}
+
+// Delete item from receipt
+async function deleteItemFromReceipt(itemId) {
+  if (!confirm('Delete this item?')) return;
+  
+  try {
+    const response = await fetch(`${API_BASE}/api/bills/item/${itemId}`, {
+      method: 'DELETE'
+    });
+    
+    if (!response.ok) throw new Error('Failed to delete item');
+    
+    // Reload current receipt data
+    await loadBill();
+    const receiptIndex = receipts.findIndex(r => r.id === currentReceipt.id);
+    currentReceipt = receipts[receiptIndex];
+    
+    renderConfigureItems();
+    renderConfigureTaxes();
+  } catch (error) {
+    console.error('Error deleting item:', error);
+    alert('Failed to delete item');
+  }
+}
+
 // Configure receipt (full split configuration)
 function configureReceipt(index) {
   if (participants.length === 0) {
@@ -497,9 +543,12 @@ function renderConfigureItems() {
             <div class="text-secondary text-sm">${billData.currency_symbol}${item.price.toFixed(2)}</div>
             <div class="text-sm mt-1">${splitText}</div>
           </div>
-          <button onclick="openSplitModal('${item.id}')" class="btn btn-primary btn-sm">
-            ${splitCount > 0 ? 'Edit Split' : 'Assign'}
-          </button>
+          <div class="flex-gap">
+            <button onclick="openSplitModal('${item.id}')" class="btn btn-primary btn-sm">
+              ${splitCount > 0 ? 'Edit Split' : 'Assign'}
+            </button>
+            <button onclick="deleteItemFromReceipt('${item.id}')" class="btn btn-danger btn-sm">Delete</button>
+          </div>
         </div>
       </div>
     `;
@@ -535,7 +584,10 @@ function renderConfigureTaxes() {
             <div class="text-secondary text-sm">${billData.currency_symbol}${item.price.toFixed(2)}</div>
             <div class="text-sm mt-1">${distText}</div>
           </div>
-          <button onclick="openTaxModal('${item.id}')" class="btn btn-primary btn-sm">Configure</button>
+          <div class="flex-gap">
+            <button onclick="openTaxModal('${item.id}')" class="btn btn-primary btn-sm">Configure</button>
+            <button onclick="deleteItemFromReceipt('${item.id}')" class="btn btn-danger btn-sm">Delete</button>
+          </div>
         </div>
       </div>
     `;
@@ -827,14 +879,6 @@ async function saveReceiptConfiguration() {
     console.error('Error saving configuration:', error);
     alert('Failed to save configuration');
   }
-}
-
-// Delete receipt
-async function deleteReceipt(index) {
-  if (!confirm('Delete this receipt and all its items?')) return;
-  
-  // Note: Deletion is handled by CASCADE in database
-  alert('Receipt deletion not implemented yet. Use configure to remove items instead.');
 }
 
 // Finish and calculate
