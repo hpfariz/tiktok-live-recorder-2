@@ -132,47 +132,84 @@
     </div>
   </div>
 
-  <!-- Edit Receipt Modal -->
-  <div id="edit-receipt-modal" style="display: none;">
+  <!-- Configure Receipt Modal (Full Split Configuration) -->
+  <div id="configure-receipt-modal" style="display: none;">
     <div class="modal-overlay">
-      <div class="modal">
+      <div class="modal" style="max-width: 800px;">
         <div class="modal-header">
-          <h3 class="modal-title">Edit Receipt</h3>
+          <h3 class="modal-title">Configure: <span id="configure-receipt-title"></span></h3>
         </div>
-        <div class="modal-body">
-          <div id="edit-items-list"></div>
+        <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
           
+          <!-- Split Items Section -->
+          <div class="card-title">Split Items</div>
+          <p class="text-secondary text-sm mb-2">Assign each item to participants</p>
+          <div id="configure-items-list"></div>
+
           <div class="divider"></div>
-          
-          <div class="form-group">
-            <label class="form-label">Add Item to This Receipt</label>
-            <div class="grid grid-2">
-              <input type="text" id="edit-new-item-name" class="form-input" placeholder="Item name">
-              <input type="number" id="edit-new-item-price" class="form-input" placeholder="Price" step="0.01">
-            </div>
-            <button type="button" class="btn btn-secondary btn-sm mt-1" onclick="addItemToCurrentReceipt()">
-              + Add Item
-            </button>
+
+          <!-- Tax & Charges Section -->
+          <div id="configure-tax-section">
+            <div class="card-title">Tax & Service Charges</div>
+            <p class="text-secondary text-sm mb-2">Configure how taxes are distributed</p>
+            <div id="configure-tax-list"></div>
+            <div class="divider"></div>
           </div>
 
-          <div class="divider"></div>
-
-          <div class="card-title">Assign to Participants</div>
-          <p class="text-secondary text-sm mb-2">Select who should split this receipt</p>
-          <div id="edit-receipt-participants"></div>
-
-          <div class="divider"></div>
-
+          <!-- Who Paid Section -->
           <div class="card-title">Who Paid?</div>
           <div class="form-group">
-            <select id="edit-receipt-payer" class="form-select">
+            <select id="configure-receipt-payer" class="form-select">
               <option value="">Select payer...</option>
             </select>
           </div>
         </div>
         <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" onclick="closeEditReceiptModal()">Close</button>
-          <button type="button" class="btn btn-primary" onclick="saveReceiptChanges()">Save Changes</button>
+          <button type="button" class="btn btn-secondary" onclick="closeConfigureReceiptModal()">Close</button>
+          <button type="button" class="btn btn-primary" onclick="saveReceiptConfiguration()">Save Configuration</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Item Split Modal (Same as Single Bill) -->
+  <div id="split-modal" style="display: none;">
+    <div class="modal-overlay">
+      <div class="modal">
+        <div class="modal-header">
+          <h3 class="modal-title">Split: <span id="split-modal-title"></span></h3>
+        </div>
+        <div class="modal-body">
+          <div id="split-participants-list"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeSplitModal()">Cancel</button>
+          <button type="button" class="btn btn-primary" onclick="saveSplit()">Save Split</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tax Distribution Modal (Same as Single Bill) -->
+  <div id="tax-modal" style="display: none;">
+    <div class="modal-overlay">
+      <div class="modal">
+        <div class="modal-header">
+          <h3 class="modal-title">Configure: <span id="tax-modal-title"></span></h3>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label">How should this be distributed?</label>
+            <select id="tax-distribution-type" class="form-select">
+              <option value="proportional">Proportional - Based on what each person ordered</option>
+              <option value="equal">Equal - Split evenly among all participants</option>
+              <option value="none">Don't include - Skip this charge</option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeTaxModal()">Cancel</button>
+          <button type="button" class="btn btn-primary" onclick="saveTaxDistribution()">Save</button>
         </div>
       </div>
     </div>

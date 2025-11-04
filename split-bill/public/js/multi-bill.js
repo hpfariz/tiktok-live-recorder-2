@@ -1,4 +1,4 @@
-// Multi-Bill JavaScript
+// Multi-Bill JavaScript - Enhanced with Full Split Configuration
 const BASE_PATH = window.location.pathname.match(/^\/[^\/]+/)?.[0] || '';
 const API_BASE = window.location.origin + BASE_PATH;
 
@@ -9,6 +9,8 @@ let receipts = [];
 let participants = [];
 let currentReceipt = null;
 let currentOCRResult = null;
+let currentSplitItem = null;
+let currentTaxItem = null;
 
 // Get bill ID from URL
 function getBillId() {
@@ -388,27 +390,40 @@ function renderReceipts() {
     const total = items.reduce((sum, item) => sum + item.price, 0);
     const itemCount = items.filter(i => !i.is_tax_or_charge).length;
     
+    // Check if receipt is configured (has splits)
+    const isConfigured = items.some(i => i.splits && i.splits.length > 0);
+    const statusBadge = isConfigured 
+      ? '<span class="badge" style="background: #e8e8e8;">✓ Configured</span>'
+      : '<span class="badge" style="background: #f5f5f5;">Not configured</span>';
+    
     return `
       <div class="card" style="background: var(--color-surface); margin-bottom: 16px;">
         <div class="flex-between mb-2">
           <div>
             <strong>Receipt ${index + 1}</strong>
             ${receipt.image_path ? '📸' : '✏️'}
+            ${statusBadge}
             <div class="text-secondary text-sm">${itemCount} items • ${billData.currency_symbol}${total.toFixed(2)}</div>
           </div>
           <div class="flex-gap">
-            <button onclick="editReceipt(${index})" class="btn btn-primary btn-sm">Edit</button>
+            <button onclick="configureReceipt(${index})" class="btn btn-primary btn-sm">Configure</button>
             <button onclick="deleteReceipt(${index})" class="btn btn-danger btn-sm">Delete</button>
           </div>
         </div>
         
         <div class="text-sm">
-          ${items.slice(0, 3).map(item => `
-            <div class="flex-between" style="padding: 4px 0;">
-              <span>${item.name}</span>
-              <span>${billData.currency_symbol}${item.price.toFixed(2)}</span>
-            </div>
-          `).join('')}
+          ${items.slice(0, 3).map(item => {
+            const displayName = (item.quantity && item.quantity > 1 && item.unit_price) 
+              ? `${item.name} (${item.quantity}x)`
+              : item.name;
+            
+            return `
+              <div class="flex-between" style="padding: 4px 0;">
+                <span>${displayName}</span>
+                <span>${billData.currency_symbol}${item.price.toFixed(2)}</span>
+              </div>
+            `;
+          }).join('')}
           ${items.length > 3 ? `<div class="text-secondary">+ ${items.length - 3} more items</div>` : ''}
         </div>
       </div>
@@ -416,142 +431,346 @@ function renderReceipts() {
   }).join('');
 }
 
-// Edit receipt
-function editReceipt(index) {
+// Configure receipt (full split configuration)
+function configureReceipt(index) {
+  if (participants.length === 0) {
+    alert('Please add participants first');
+    return;
+  }
+  
   currentReceipt = receipts[index];
   
-  document.getElementById('edit-receipt-modal').style.display = 'block';
+  document.getElementById('configure-receipt-modal').style.display = 'block';
+  document.getElementById('configure-receipt-title').textContent = `Receipt ${index + 1}`;
   
-  // Render items
-  renderEditItems();
+  // Render items for split configuration
+  renderConfigureItems();
   
-  // Render participant checkboxes
-  renderEditParticipants();
+  // Render tax items for distribution configuration
+  renderConfigureTaxes();
   
   // Populate payer select
-  const payerSelect = document.getElementById('edit-receipt-payer');
+  const payerSelect = document.getElementById('configure-receipt-payer');
   payerSelect.innerHTML = '<option value="">Select payer...</option>' +
     participants.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+  
+  // Pre-select payer if already set
+  const existingPayment = billData.payments?.find(pay => 
+    currentReceipt.items.some(item => item.receipt_id === currentReceipt.id)
+  );
+  if (existingPayment) {
+    payerSelect.value = existingPayment.payer_id;
+  }
 }
 
-// Close edit receipt modal
-function closeEditReceiptModal() {
-  document.getElementById('edit-receipt-modal').style.display = 'none';
+// Close configure receipt modal
+function closeConfigureReceiptModal() {
+  document.getElementById('configure-receipt-modal').style.display = 'none';
   currentReceipt = null;
 }
 
-// Render edit items
-function renderEditItems() {
-  const container = document.getElementById('edit-items-list');
-  const items = currentReceipt.items || [];
+// Render items for split configuration
+function renderConfigureItems() {
+  const container = document.getElementById('configure-items-list');
+  const items = currentReceipt.items.filter(item => !item.is_tax_or_charge);
   
-  container.innerHTML = items.map((item, index) => `
-    <div class="item-list-item">
-      <div class="flex-between">
-        <div>
-          <strong>${item.name}</strong>
-          <div class="text-secondary text-sm">${billData.currency_symbol}${item.price.toFixed(2)}</div>
+  if (items.length === 0) {
+    container.innerHTML = '<div class="text-secondary">No items to configure</div>';
+    return;
+  }
+  
+  container.innerHTML = items.map(item => {
+    const splitCount = (item.splits || []).length;
+    const splitText = splitCount > 0 
+      ? `Split among ${splitCount} ${splitCount === 1 ? 'person' : 'people'}`
+      : 'Not assigned yet';
+    
+    const qtyText = (item.quantity && item.quantity > 1 && item.unit_price) 
+      ? ` (${item.quantity}x ${billData.currency_symbol}${item.unit_price.toFixed(2)})` 
+      : '';
+
+    return `
+      <div class="item-list-item">
+        <div class="flex-between">
+          <div>
+            <strong>${item.name}${qtyText}</strong>
+            <div class="text-secondary text-sm">${billData.currency_symbol}${item.price.toFixed(2)}</div>
+            <div class="text-sm mt-1">${splitText}</div>
+          </div>
+          <button onclick="openSplitModal('${item.id}')" class="btn btn-primary btn-sm">
+            ${splitCount > 0 ? 'Edit Split' : 'Assign'}
+          </button>
         </div>
-        <button onclick="deleteItemFromReceipt('${item.id}')" class="btn btn-danger btn-sm">Delete</button>
       </div>
-    </div>
-  `).join('');
+    `;
+  }).join('');
 }
 
-// Render edit participants
-function renderEditParticipants() {
-  const container = document.getElementById('edit-receipt-participants');
+// Render tax items for distribution configuration
+function renderConfigureTaxes() {
+  const container = document.getElementById('configure-tax-list');
+  const taxItems = currentReceipt.items.filter(item => item.is_tax_or_charge);
   
-  if (participants.length === 0) {
-    container.innerHTML = '<div class="text-secondary text-sm">Add participants first</div>';
+  if (taxItems.length === 0) {
+    document.getElementById('configure-tax-section').style.display = 'none';
     return;
   }
   
-  container.innerHTML = participants.map(p => `
-    <div style="margin-bottom: 8px;">
-      <label style="display: flex; align-items: center; gap: 8px;">
-        <input type="checkbox" id="receipt-participant-${p.id}" class="receipt-participant-check">
-        ${p.name}
-      </label>
-    </div>
-  `).join('');
+  document.getElementById('configure-tax-section').style.display = 'block';
+  
+  container.innerHTML = taxItems.map(item => {
+    const taxDist = item.tax_distribution;
+    const distType = taxDist?.distribution_type || 'proportional';
+    const distText = {
+      'proportional': 'Proportional',
+      'equal': 'Equal split',
+      'none': 'Not included'
+    }[distType] || 'Not configured';
+    
+    return `
+      <div class="item-list-item">
+        <div class="flex-between">
+          <div>
+            <strong>${item.name}</strong>
+            <div class="text-secondary text-sm">${billData.currency_symbol}${item.price.toFixed(2)}</div>
+            <div class="text-sm mt-1">${distText}</div>
+          </div>
+          <button onclick="openTaxModal('${item.id}')" class="btn btn-primary btn-sm">Configure</button>
+        </div>
+      </div>
+    `;
+  }).join('');
 }
 
-// Add item to current receipt
-async function addItemToCurrentReceipt() {
-  const name = document.getElementById('edit-new-item-name').value.trim();
-  const price = parseFloat(document.getElementById('edit-new-item-price').value);
+// Open split modal (same as single-bill)
+function openSplitModal(itemId) {
+  currentSplitItem = currentReceipt.items.find(item => item.id === itemId);
+  if (!currentSplitItem) return;
   
-  if (!name || !price || price <= 0) {
-    alert('Please enter valid item name and price');
-    return;
-  }
+  document.getElementById('split-modal-title').textContent = currentSplitItem.name;
   
-  try {
-    // Manual items added during edit default to quantity 1
-    await addItemToReceipt(currentReceipt.id, name, price, false, null, 1, price);
+  // Render participants with split options
+  const container = document.getElementById('split-participants-list');
+  container.innerHTML = participants.map(p => {
+    const existingSplit = (currentSplitItem.splits || []).find(s => s.participant_id === p.id);
     
-    // Reload
-    await loadBill();
-    const receiptIndex = receipts.findIndex(r => r.id === currentReceipt.id);
-    currentReceipt = receipts[receiptIndex];
+    return `
+      <div class="form-group">
+        <label class="form-label">
+          <input type="checkbox" id="split-p-${p.id}" ${existingSplit ? 'checked' : ''}>
+          ${p.name}
+        </label>
+        
+        <div id="split-options-${p.id}" style="display: ${existingSplit ? 'block' : 'none'}; margin-top: 8px; margin-left: 24px;">
+          <select class="form-select mb-1" id="split-type-${p.id}" onchange="updateSplitOptions('${p.id}')">
+            <option value="equal" ${existingSplit?.split_type === 'equal' ? 'selected' : ''}>Equal Split</option>
+            ${currentSplitItem.quantity && currentSplitItem.quantity > 1 ? `<option value="quantity" ${existingSplit?.split_type === 'quantity' ? 'selected' : ''}>By Quantity (max ${currentSplitItem.quantity})</option>` : ''}
+            <option value="fixed" ${existingSplit?.split_type === 'fixed' ? 'selected' : ''}>Fixed Amount</option>
+            <option value="percent" ${existingSplit?.split_type === 'percent' ? 'selected' : ''}>Percentage</option>
+          </select>
+          
+          <div id="split-value-container-${p.id}" style="display: ${existingSplit && existingSplit.split_type !== 'equal' ? 'block' : 'none'};">
+            <input type="number" class="form-input" id="split-value-${p.id}" 
+              placeholder="${existingSplit ? 
+              (existingSplit.split_type === 'percent' ? 'Percentage' : 
+              existingSplit.split_type === 'quantity' ? `Quantity (max ${currentSplitItem.quantity})` : 
+              'Amount') : 'Value'}"
+              ${existingSplit && existingSplit.split_type === 'quantity' ? 'step="1" min="1" max="' + currentSplitItem.quantity + '"' : 'step="0.01"'}
+              value="${existingSplit && existingSplit.split_type !== 'equal' ? existingSplit.value : ''}">
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+  
+  // Add event listeners
+  participants.forEach(p => {
+    const checkbox = document.getElementById(`split-p-${p.id}`);
+    if (checkbox) {
+      checkbox.addEventListener('change', (e) => {
+        document.getElementById(`split-options-${p.id}`).style.display = e.target.checked ? 'block' : 'none';
+      });
+    }
+  });
+  
+  document.getElementById('split-modal').style.display = 'block';
+}
+
+// Update split options visibility
+function updateSplitOptions(participantId) {
+  const type = document.getElementById(`split-type-${participantId}`).value;
+  const container = document.getElementById(`split-value-container-${participantId}`);
+  
+  if (type === 'equal') {
+    container.style.display = 'none';
+  } else {
+    container.style.display = 'block';
+    const input = document.getElementById(`split-value-${participantId}`);
     
-    renderEditItems();
-    document.getElementById('edit-new-item-name').value = '';
-    document.getElementById('edit-new-item-price').value = '';
-  } catch (error) {
-    alert('Failed to add item');
+    if (type === 'percent') {
+      input.placeholder = 'Percentage';
+      input.step = '0.01';
+      input.removeAttribute('min');
+      input.removeAttribute('max');
+    } else if (type === 'quantity' && currentSplitItem.quantity) {
+      input.placeholder = `Quantity (max ${currentSplitItem.quantity})`;
+      input.step = '1';
+      input.min = '1';
+      input.max = currentSplitItem.quantity;
+    } else {
+      input.placeholder = 'Amount';
+      input.step = '0.01';
+      input.removeAttribute('min');
+      input.removeAttribute('max');
+    }
   }
 }
 
-// Delete item from receipt
-async function deleteItemFromReceipt(itemId) {
-  if (!confirm('Delete this item?')) return;
+// Save split
+async function saveSplit() {
+  if (!currentSplitItem) return;
   
   try {
-    const response = await fetch(`${API_BASE}/api/bills/item/${itemId}`, {
+    // Delete existing splits first
+    const deleteResponse = await fetch(`${API_BASE}/api/bills/item/${currentSplitItem.id}/splits`, {
       method: 'DELETE'
     });
     
-    if (!response.ok) throw new Error('Failed to delete');
+    if (!deleteResponse.ok) {
+      console.warn('Could not delete existing splits, continuing anyway');
+    }
     
-    // Reload
-    await loadBill();
-    const receiptIndex = receipts.findIndex(r => r.id === currentReceipt.id);
-    currentReceipt = receipts[receiptIndex];
+    currentSplitItem.splits = [];
     
-    renderEditItems();
-  } catch (error) {
-    console.error('Error deleting item:', error);
-    alert('Failed to delete item');
-  }
-}
-
-// Save receipt changes
-async function saveReceiptChanges() {
-  const selectedParticipants = participants.filter(p => {
-    const checkbox = document.getElementById(`receipt-participant-${p.id}`);
-    return checkbox && checkbox.checked;
-  });
-  
-  const payerId = document.getElementById('edit-receipt-payer').value;
-  
-  if (selectedParticipants.length === 0) {
-    alert('Please select at least one participant');
-    return;
-  }
-  
-  try {
-    // Add splits for all items (equal split among selected participants)
-    const items = currentReceipt.items.filter(item => !item.is_tax_or_charge);
-    
-    for (const item of items) {
-      for (const p of selectedParticipants) {
-        await fetch(`${API_BASE}/api/bills/item/${item.id}/split`, {
+    // Add new splits
+    for (const p of participants) {
+      const checkbox = document.getElementById(`split-p-${p.id}`);
+      
+      if (checkbox && checkbox.checked) {
+        const type = document.getElementById(`split-type-${p.id}`).value;
+        let value = 1;
+        
+        if (type !== 'equal') {
+          value = parseFloat(document.getElementById(`split-value-${p.id}`).value) || 0;
+          if (value <= 0) {
+            alert(`Please enter a valid value for ${p.name}`);
+            return;
+          }
+        }
+        
+        // Validate quantity splits
+        if (type === 'quantity') {
+          if (!currentSplitItem.quantity || currentSplitItem.quantity < 1) {
+            alert(`Cannot split by quantity - item has no quantity information`);
+            return;
+          }
+          if (value > currentSplitItem.quantity) {
+            alert(`${p.name}'s quantity (${value}) exceeds available quantity (${currentSplitItem.quantity})`);
+            return;
+          }
+        }
+        
+        const response = await fetch(`${API_BASE}/api/bills/item/${currentSplitItem.id}/split`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             participant_id: p.id,
+            split_type: type,
+            value: value
+          })
+        });
+        
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Failed to save split');
+        }
+        
+        currentSplitItem.splits.push({ participant_id: p.id, split_type: type, value: value });
+      }
+    }
+    
+    closeSplitModal();
+    
+    // Reload current receipt data
+    await loadBill();
+    const receiptIndex = receipts.findIndex(r => r.id === currentReceipt.id);
+    currentReceipt = receipts[receiptIndex];
+    
+    renderConfigureItems();
+  } catch (error) {
+    console.error('Error saving split:', error);
+    alert(`Failed to save split: ${error.message}`);
+  }
+}
+
+// Close split modal
+function closeSplitModal() {
+  document.getElementById('split-modal').style.display = 'none';
+  currentSplitItem = null;
+}
+
+// Open tax modal
+function openTaxModal(itemId) {
+  currentTaxItem = currentReceipt.items.find(item => item.id === itemId);
+  if (!currentTaxItem) return;
+  
+  document.getElementById('tax-modal-title').textContent = currentTaxItem.name;
+  
+  // Pre-select existing distribution type
+  const existingDist = currentTaxItem.tax_distribution?.distribution_type || 'proportional';
+  document.getElementById('tax-distribution-type').value = existingDist;
+  
+  document.getElementById('tax-modal').style.display = 'block';
+}
+
+// Close tax modal
+function closeTaxModal() {
+  document.getElementById('tax-modal').style.display = 'none';
+  currentTaxItem = null;
+}
+
+// Save tax distribution
+async function saveTaxDistribution() {
+  if (!currentTaxItem) return;
+  
+  const type = document.getElementById('tax-distribution-type').value;
+  
+  try {
+    // Save distribution type
+    const response = await fetch(`${API_BASE}/api/bills/item/${currentTaxItem.id}/tax-distribution`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        distribution_type: type
+      })
+    });
+    
+    if (!response.ok) throw new Error('Failed to save distribution');
+    
+    // Delete existing tax splits
+    await fetch(`${API_BASE}/api/bills/item/${currentTaxItem.id}/splits`, {
+      method: 'DELETE'
+    });
+    
+    // Create splits for participants based on distribution type
+    if (type === 'equal' || type === 'proportional') {
+      // Get participants who have splits in this receipt's items
+      const receiptItems = currentReceipt.items.filter(i => !i.is_tax_or_charge);
+      const participantsInReceipt = new Set();
+      
+      for (const item of receiptItems) {
+        if (item.splits) {
+          item.splits.forEach(split => participantsInReceipt.add(split.participant_id));
+        }
+      }
+      
+      // Create splits for these participants
+      for (const pId of participantsInReceipt) {
+        await fetch(`${API_BASE}/api/bills/item/${currentTaxItem.id}/split`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            participant_id: pId,
             split_type: 'equal',
             value: 1
           })
@@ -559,19 +778,36 @@ async function saveReceiptChanges() {
       }
     }
     
-    // Set tax distribution to proportional for all tax items
-    const taxItems = currentReceipt.items.filter(item => item.is_tax_or_charge);
-    for (const item of taxItems) {
-      await fetch(`${API_BASE}/api/bills/item/${item.id}/tax-distribution`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          distribution_type: 'proportional'
-        })
-      });
-    }
+    closeTaxModal();
     
-    // Add payment if payer selected
+    // Reload current receipt data
+    await loadBill();
+    const receiptIndex = receipts.findIndex(r => r.id === currentReceipt.id);
+    currentReceipt = receipts[receiptIndex];
+    
+    renderConfigureTaxes();
+  } catch (error) {
+    console.error('Error saving tax distribution:', error);
+    alert('Failed to save distribution');
+  }
+}
+
+// Save receipt configuration
+async function saveReceiptConfiguration() {
+  const payerId = document.getElementById('configure-receipt-payer').value;
+  
+  // Validate all items have splits
+  const items = currentReceipt.items.filter(item => !item.is_tax_or_charge);
+  const unconfiguredItems = items.filter(item => !item.splits || item.splits.length === 0);
+  
+  if (unconfiguredItems.length > 0) {
+    if (!confirm(`${unconfiguredItems.length} item(s) are not configured. Continue anyway?`)) {
+      return;
+    }
+  }
+  
+  try {
+    // Add/update payment if payer selected
     if (payerId) {
       const total = currentReceipt.items.reduce((sum, item) => sum + item.price, 0);
       await fetch(`${API_BASE}/api/bills/${billId}/payment`, {
@@ -584,12 +820,12 @@ async function saveReceiptChanges() {
       });
     }
     
-    closeEditReceiptModal();
+    closeConfigureReceiptModal();
     await loadBill();
     renderReceipts();
   } catch (error) {
-    console.error('Error saving changes:', error);
-    alert('Failed to save changes');
+    console.error('Error saving configuration:', error);
+    alert('Failed to save configuration');
   }
 }
 
@@ -598,8 +834,7 @@ async function deleteReceipt(index) {
   if (!confirm('Delete this receipt and all its items?')) return;
   
   // Note: Deletion is handled by CASCADE in database
-  // For now, just reload to show it's gone
-  alert('Receipt deletion not implemented yet. Use edit to remove items instead.');
+  alert('Receipt deletion not implemented yet. Use configure to remove items instead.');
 }
 
 // Finish and calculate
@@ -628,7 +863,7 @@ function finishAndCalculate() {
   }
   
   if (hasUnconfigured) {
-    if (!confirm('Some items are not assigned to participants. Continue anyway?')) {
+    if (!confirm('Some items are not configured. Continue anyway?')) {
       return;
     }
   }
@@ -642,6 +877,8 @@ document.addEventListener('click', (e) => {
   if (e.target.classList.contains('modal-overlay')) {
     closeAddReceiptModal();
     closeAddManualItemModal();
-    closeEditReceiptModal();
+    closeConfigureReceiptModal();
+    closeSplitModal();
+    closeTaxModal();
   }
 });
