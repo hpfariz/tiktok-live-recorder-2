@@ -302,6 +302,19 @@ router.post('/item/:itemId/split', (req, res) => {
   }
 });
 
+// Delete all splits for an item
+router.delete('/item/:itemId/splits', (req, res) => {
+  const { itemId } = req.params;
+  
+  try {
+    db.prepare('DELETE FROM item_splits WHERE item_id = ?').run(itemId);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting splits:', error);
+    res.status(500).json({ error: 'Failed to delete splits' });
+  }
+});
+
 // Set tax distribution
 router.post('/item/:itemId/tax-distribution', (req, res) => {
   const { itemId } = req.params;

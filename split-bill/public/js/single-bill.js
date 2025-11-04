@@ -429,10 +429,20 @@ function updateSplitOptions(participantId) {
 async function saveSplit() {
   if (!currentSplitItem) return;
   
-  // Clear existing splits for this item
-  currentSplitItem.splits = [];
-  
   try {
+    // STEP 1: Delete existing splits for this item
+    const deleteResponse = await fetch(`${API_BASE}/api/bills/item/${currentSplitItem.id}/splits`, {
+      method: 'DELETE'
+    });
+    
+    if (!deleteResponse.ok) {
+      console.warn('Could not delete existing splits, continuing anyway');
+    }
+    
+    // Clear client-side array
+    currentSplitItem.splits = [];
+    
+    // STEP 2: Add new splits
     for (const p of participants) {
       const checkbox = document.getElementById(`split-p-${p.id}`);
       
@@ -448,6 +458,18 @@ async function saveSplit() {
           }
         }
         
+        // Validate quantity splits
+        if (type === 'quantity') {
+          if (!currentSplitItem.quantity || currentSplitItem.quantity < 1) {
+            alert(`Cannot split by quantity - item has no quantity information`);
+            return;
+          }
+          if (value > currentSplitItem.quantity) {
+            alert(`${p.name}'s quantity (${value}) exceeds available quantity (${currentSplitItem.quantity})`);
+            return;
+          }
+        }
+        
         // Save to server
         const response = await fetch(`${API_BASE}/api/bills/item/${currentSplitItem.id}/split`, {
           method: 'POST',
@@ -459,7 +481,10 @@ async function saveSplit() {
           })
         });
         
-        if (!response.ok) throw new Error('Failed to save split');
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Failed to save split');
+        }
         
         currentSplitItem.splits.push({ participant_id: p.id, split_type: type, value: value });
       }
@@ -469,7 +494,7 @@ async function saveSplit() {
     renderSplitItems();
   } catch (error) {
     console.error('Error saving split:', error);
-    alert('Failed to save split');
+    alert(`Failed to save split: ${error.message}`);
   }
 }
 
