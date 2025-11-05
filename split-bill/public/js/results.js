@@ -1,4 +1,4 @@
-// Results JavaScript
+// Results JavaScript - UPDATED with improved download and receipt display
 const BASE_PATH = window.location.pathname.match(/^\/[^\/]+/)?.[0] || '';
 const API_BASE = window.location.origin + BASE_PATH;
 
@@ -218,7 +218,8 @@ async function showParticipantBreakdown(participantId, participantName) {
             <div class="text-secondary text-sm">
               ${item.split_type === 'equal' ? 'Equal split' :
                 item.split_type === 'fixed' ? 'Fixed amount' :
-                item.split_type === 'percent' ? `${item.split_value}%` : ''}
+                item.split_type === 'percent' ? `${item.split_value}%` :
+                item.split_type === 'proportional' ? 'Proportional' : ''}
             </div>
           </div>
           <div>${breakdown.currency_symbol}${item.amount.toFixed(2)}</div>
@@ -238,15 +239,9 @@ function closeBreakdownModal() {
   document.getElementById('breakdown-modal').style.display = 'none';
 }
 
-// Render receipts
+// NEW: Render receipts - show ALL receipts (scanned and manual) with payer names
 function renderReceipts() {
   if (!billData.receipts || billData.receipts.length === 0) {
-    return; // Keep card hidden
-  }
-  
-  const receiptsWithImages = billData.receipts.filter(r => r.image_path);
-  
-  if (receiptsWithImages.length === 0) {
     return; // Keep card hidden
   }
   
@@ -255,25 +250,141 @@ function renderReceipts() {
   
   card.style.display = 'block';
   
-  gallery.innerHTML = receiptsWithImages.map((receipt, index) => {
-    const imagePath = `${API_BASE}/${receipt.image_path}`;
+  // NEW: Show ALL receipts, not just those with images
+  gallery.innerHTML = billData.receipts.map((receipt, index) => {
+    const imagePath = receipt.image_path ? `${API_BASE}/${receipt.image_path}` : null;
+    const items = receipt.items || [];
+    const total = items.reduce((sum, item) => sum + item.price, 0);
     
-    return `
-      <div style="cursor: pointer;" onclick="showReceiptImage('${imagePath}')">
-        <div class="receipt-preview">
-          <img src="${imagePath}" alt="Receipt ${index + 1}">
+    // Get payer name for this receipt
+    let payerName = 'Unknown';
+    if (billData.payments) {
+      const payment = billData.payments.find(p => p.receipt_id === receipt.id);
+      if (payment) {
+        payerName = payment.payer_name;
+      }
+    }
+    
+    // If there's an image, show it
+    if (imagePath) {
+      return `
+        <div>
+          <div style="cursor: pointer;" onclick="showReceiptImage('${imagePath}', ${index + 1}, '${payerName}')">
+            <div class="receipt-preview">
+              <img src="${imagePath}" alt="Receipt ${index + 1}">
+            </div>
+          </div>
+          <div class="text-center text-sm mt-1">
+            <strong>Receipt ${index + 1}</strong> 📸<br>
+            ${billData.currency_symbol}${total.toFixed(2)}<br>
+            <span style="color: var(--color-text-secondary);">Paid by <strong>${payerName}</strong></span>
+          </div>
         </div>
-        <div class="text-center text-sm mt-1">Receipt ${index + 1}</div>
-      </div>
-    `;
+      `;
+    } else {
+      // Manual item - show card with item details
+      const itemCount = items.filter(i => !i.is_tax_or_charge).length;
+      return `
+        <div>
+          <div class="card" style="cursor: pointer; min-height: 150px; display: flex; flex-direction: column; justify-content: center;" onclick="showReceiptDetails(${index})">
+            <div class="text-center">
+              <div style="font-size: 32px; margin-bottom: 8px;">✏️</div>
+              <strong>Receipt ${index + 1}</strong><br>
+              <span class="text-secondary text-sm">${itemCount} item${itemCount !== 1 ? 's' : ''}</span>
+            </div>
+          </div>
+          <div class="text-center text-sm mt-1">
+            ${billData.currency_symbol}${total.toFixed(2)}<br>
+            <span style="color: var(--color-text-secondary);">Paid by <strong>${payerName}</strong></span>
+          </div>
+        </div>
+      `;
+    }
   }).join('');
 }
 
-// Show receipt image
-function showReceiptImage(imagePath) {
+// Show receipt image with payer name
+function showReceiptImage(imagePath, receiptNumber, payerName) {
+  document.getElementById('receipt-modal-title').textContent = `Receipt ${receiptNumber}`;
+  document.getElementById('receipt-modal-payer').textContent = `Paid by ${payerName}`;
   document.getElementById('receipt-modal-image').src = imagePath;
-  document.getElementById('receipt-download-link').href = imagePath;
+  
+  // NEW: Improved download - create a hidden link and trigger click
+  const downloadBtn = document.getElementById('receipt-download-btn');
+  downloadBtn.onclick = () => downloadReceiptImage(imagePath, receiptNumber);
+  
   document.getElementById('receipt-modal').style.display = 'block';
+}
+
+// NEW: Show receipt details (for manual items)
+function showReceiptDetails(receiptIndex) {
+  const receipt = billData.receipts[receiptIndex];
+  const items = receipt.items || [];
+  
+  // Get payer name
+  let payerName = 'Unknown';
+  if (billData.payments) {
+    const payment = billData.payments.find(p => p.receipt_id === receipt.id);
+    if (payment) {
+      payerName = payment.payer_name;
+    }
+  }
+  
+  document.getElementById('receipt-details-modal-title').textContent = `Receipt ${receiptIndex + 1}`;
+  document.getElementById('receipt-details-modal-payer').textContent = `Paid by ${payerName}`;
+  
+  const itemsList = document.getElementById('receipt-details-items-list');
+  itemsList.innerHTML = items.map(item => `
+    <div class="flex-between" style="padding: 8px 0; border-bottom: 1px solid var(--color-border);">
+      <div>
+        <strong>${item.name}</strong>
+        ${item.is_tax_or_charge ? '<span class="badge" style="margin-left: 8px;">Tax/Charge</span>' : ''}
+      </div>
+      <div>${billData.currency_symbol}${item.price.toFixed(2)}</div>
+    </div>
+  `).join('');
+  
+  const total = items.reduce((sum, item) => sum + item.price, 0);
+  document.getElementById('receipt-details-total').textContent = `${billData.currency_symbol}${total.toFixed(2)}`;
+  
+  document.getElementById('receipt-details-modal').style.display = 'block';
+}
+
+// Close receipt details modal
+function closeReceiptDetailsModal() {
+  document.getElementById('receipt-details-modal').style.display = 'none';
+}
+
+// NEW: Improved download function using fetch and blob
+async function downloadReceiptImage(imagePath, receiptNumber) {
+  try {
+    // Fetch the image as a blob
+    const response = await fetch(imagePath);
+    if (!response.ok) throw new Error('Failed to fetch image');
+    
+    const blob = await response.blob();
+    
+    // Create a temporary URL for the blob
+    const blobUrl = window.URL.createObjectURL(blob);
+    
+    // Create a temporary anchor element
+    const link = document.createElement('a');
+    link.href = blobUrl;
+    link.download = `receipt-${receiptNumber}.jpg`;
+    
+    // Append to body, click, and remove
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    // Clean up the blob URL
+    window.URL.revokeObjectURL(blobUrl);
+  } catch (error) {
+    console.error('Download failed:', error);
+    
+    // Fallback: open in new tab
+    window.open(imagePath, '_blank');
+  }
 }
 
 // Close receipt modal
@@ -362,6 +473,7 @@ document.addEventListener('click', (e) => {
   if (e.target.classList.contains('modal-overlay')) {
     closeBreakdownModal();
     closeReceiptModal();
+    closeReceiptDetailsModal();
   }
 });
 

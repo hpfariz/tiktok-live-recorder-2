@@ -1,4 +1,4 @@
-// Multi-Bill JavaScript - Complete with Deletion Features
+// Multi-Bill JavaScript - UPDATED with new features
 const BASE_PATH = window.location.pathname.match(/^\/[^\/]+/)?.[0] || '';
 const API_BASE = window.location.origin + BASE_PATH;
 
@@ -11,6 +11,7 @@ let currentReceipt = null;
 let currentOCRResult = null;
 let currentSplitItem = null;
 let currentTaxItem = null;
+let currentEditItem = null;
 
 // Get bill ID from URL
 function getBillId() {
@@ -372,6 +373,16 @@ async function saveManualItem() {
   }
 }
 
+// NEW: Get payer name for receipt
+function getPayerName(receipt) {
+  if (!billData.payments) return null;
+  
+  const payment = billData.payments.find(p => p.receipt_id === receipt.id);
+  if (!payment) return null;
+  
+  return payment.payer_name;
+}
+
 // Render receipts
 function renderReceipts() {
   const container = document.getElementById('receipts-list');
@@ -396,6 +407,12 @@ function renderReceipts() {
       ? '<span class="badge" style="background: #e8e8e8;">✓ Configured</span>'
       : '<span class="badge" style="background: #f5f5f5;">Not configured</span>';
     
+    // NEW: Get payer name
+    const payerName = getPayerName(receipt);
+    const payerBadge = payerName 
+      ? `<span class="badge" style="background: #d0d0d0;">Paid by <strong>${payerName}</strong></span>`
+      : '';
+    
     return `
       <div class="card" style="background: var(--color-surface); margin-bottom: 16px;">
         <div class="flex-between mb-2">
@@ -403,6 +420,7 @@ function renderReceipts() {
             <strong>Receipt ${index + 1}</strong>
             ${receipt.image_path ? '📸' : '✏️'}
             ${statusBadge}
+            ${payerBadge}
             <div class="text-secondary text-sm">${itemCount} items • ${billData.currency_symbol}${total.toFixed(2)}</div>
           </div>
           <div class="flex-gap">
@@ -477,6 +495,69 @@ async function deleteItemFromReceipt(itemId) {
   }
 }
 
+// NEW: Open edit item modal
+function openEditItemModal(itemId) {
+  currentEditItem = currentReceipt.items.find(item => item.id === itemId);
+  if (!currentEditItem) return;
+  
+  document.getElementById('edit-item-name').value = currentEditItem.name;
+  document.getElementById('edit-item-price').value = currentEditItem.price;
+  document.getElementById('edit-item-modal').style.display = 'block';
+}
+
+// NEW: Close edit item modal
+function closeEditItemModal() {
+  document.getElementById('edit-item-modal').style.display = 'none';
+  currentEditItem = null;
+}
+
+// NEW: Save edited item
+async function saveEditedItem() {
+  if (!currentEditItem) return;
+  
+  const name = document.getElementById('edit-item-name').value.trim();
+  const price = parseFloat(document.getElementById('edit-item-price').value);
+  
+  if (!name || !price || price <= 0) {
+    alert('Please enter valid item name and price');
+    return;
+  }
+  
+  try {
+    const response = await fetch(`${API_BASE}/api/bills/item/${currentEditItem.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name,
+        price,
+        is_tax_or_charge: currentEditItem.is_tax_or_charge,
+        charge_type: currentEditItem.charge_type,
+        quantity: currentEditItem.quantity,
+        unit_price: currentEditItem.unit_price
+      })
+    });
+    
+    if (!response.ok) throw new Error('Failed to update item');
+    
+    // Update local data
+    currentEditItem.name = name;
+    currentEditItem.price = price;
+    
+    closeEditItemModal();
+    
+    // Reload current receipt data
+    await loadBill();
+    const receiptIndex = receipts.findIndex(r => r.id === currentReceipt.id);
+    currentReceipt = receipts[receiptIndex];
+    
+    renderConfigureItems();
+    renderConfigureTaxes();
+  } catch (error) {
+    console.error('Error updating item:', error);
+    alert('Failed to update item');
+  }
+}
+
 // Configure receipt (full split configuration)
 function configureReceipt(index) {
   if (participants.length === 0) {
@@ -500,10 +581,8 @@ function configureReceipt(index) {
   payerSelect.innerHTML = '<option value="">Select payer...</option>' +
     participants.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
   
-  // Pre-select payer if already set
-  const existingPayment = billData.payments?.find(pay => 
-    currentReceipt.items.some(item => item.receipt_id === currentReceipt.id)
-  );
+  // BUGFIX: Pre-select payer if already set (look for payment with this receipt_id)
+  const existingPayment = billData.payments?.find(pay => pay.receipt_id === currentReceipt.id);
   if (existingPayment) {
     payerSelect.value = existingPayment.payer_id;
   }
@@ -513,6 +592,22 @@ function configureReceipt(index) {
 function closeConfigureReceiptModal() {
   document.getElementById('configure-receipt-modal').style.display = 'none';
   currentReceipt = null;
+}
+
+// NEW: Get formatted names for splits display
+function getFormattedSplitNames(splits) {
+  if (!splits || splits.length === 0) return 'Not assigned yet';
+  
+  const names = splits.map(s => s.participant_name || participants.find(p => p.id === s.participant_id)?.name || 'Unknown');
+  
+  if (names.length === 1) {
+    return `Split to <strong>${names[0]}</strong>`;
+  } else if (names.length === 2) {
+    return `Split between <strong>${names[0]}</strong> and <strong>${names[1]}</strong>`;
+  } else {
+    const lastPerson = names.pop();
+    return `Split among <strong>${names.join('</strong>, <strong>')}</strong>, and <strong>${lastPerson}</strong>`;
+  }
 }
 
 // Render items for split configuration
@@ -527,9 +622,7 @@ function renderConfigureItems() {
   
   container.innerHTML = items.map(item => {
     const splitCount = (item.splits || []).length;
-    const splitText = splitCount > 0 
-      ? `Split among ${splitCount} ${splitCount === 1 ? 'person' : 'people'}`
-      : 'Not assigned yet';
+    const splitText = getFormattedSplitNames(item.splits);
     
     const qtyText = (item.quantity && item.quantity > 1 && item.unit_price) 
       ? ` (${item.quantity}x ${billData.currency_symbol}${item.unit_price.toFixed(2)})` 
@@ -547,12 +640,175 @@ function renderConfigureItems() {
             <button onclick="openSplitModal('${item.id}')" class="btn btn-primary btn-sm">
               ${splitCount > 0 ? 'Edit Split' : 'Assign'}
             </button>
+            <button onclick="openEditItemModal('${item.id}')" class="btn btn-secondary btn-sm">Edit</button>
             <button onclick="deleteItemFromReceipt('${item.id}')" class="btn btn-danger btn-sm">Delete</button>
           </div>
         </div>
       </div>
     `;
   }).join('');
+}
+
+// NEW: Show add manual tax modal (for current receipt)
+function showAddManualTaxModal() {
+  document.getElementById('add-manual-tax-modal').style.display = 'block';
+}
+
+// NEW: Close add manual tax modal
+function closeAddManualTaxModal() {
+  document.getElementById('add-manual-tax-modal').style.display = 'none';
+  document.getElementById('manual-tax-type').value = 'percentage';
+  document.getElementById('manual-tax-value').value = '';
+  document.getElementById('manual-tax-name').value = '';
+}
+
+// NEW: Update manual tax input based on type
+function updateManualTaxInput() {
+  const type = document.getElementById('manual-tax-type').value;
+  const valueInput = document.getElementById('manual-tax-value');
+  const nameInput = document.getElementById('manual-tax-name');
+  
+  if (type === 'percentage') {
+    valueInput.placeholder = '10';
+    nameInput.placeholder = 'Tax (10%)';
+  } else {
+    valueInput.placeholder = '0.00';
+    nameInput.placeholder = 'Tax';
+  }
+}
+
+// NEW: Save manual tax (for current receipt)
+async function saveManualTax() {
+  if (!currentReceipt) return;
+  
+  const type = document.getElementById('manual-tax-type').value;
+  const value = parseFloat(document.getElementById('manual-tax-value').value);
+  let name = document.getElementById('manual-tax-name').value.trim();
+  
+  if (!value || value <= 0) {
+    alert('Please enter a valid amount or percentage');
+    return;
+  }
+  
+  try {
+    let taxAmount;
+    
+    if (type === 'percentage') {
+      // Calculate tax based on subtotal of current receipt
+      const subtotal = currentReceipt.items
+        .filter(item => !item.is_tax_or_charge)
+        .reduce((sum, item) => sum + item.price, 0);
+      
+      taxAmount = (subtotal * value) / 100;
+      
+      if (!name) {
+        name = `Tax (${value}%)`;
+      }
+    } else {
+      // Exact amount
+      taxAmount = value;
+      
+      if (!name) {
+        name = 'Tax';
+      }
+    }
+    
+    // Add tax item to current receipt
+    await addItemToReceipt(currentReceipt.id, name, taxAmount, true, 'tax');
+    
+    closeAddManualTaxModal();
+    
+    // Reload
+    await loadBill();
+    const receiptIndex = receipts.findIndex(r => r.id === currentReceipt.id);
+    currentReceipt = receipts[receiptIndex];
+    
+    renderConfigureTaxes();
+  } catch (error) {
+    console.error('Error adding manual tax:', error);
+    alert('Failed to add tax');
+  }
+}
+
+// NEW: Show add manual service charge modal (for current receipt)
+function showAddManualServiceModal() {
+  document.getElementById('add-manual-service-modal').style.display = 'block';
+}
+
+// NEW: Close add manual service charge modal
+function closeAddManualServiceModal() {
+  document.getElementById('add-manual-service-modal').style.display = 'none';
+  document.getElementById('manual-service-type').value = 'percentage';
+  document.getElementById('manual-service-value').value = '';
+  document.getElementById('manual-service-name').value = '';
+}
+
+// NEW: Update manual service input based on type
+function updateManualServiceInput() {
+  const type = document.getElementById('manual-service-type').value;
+  const valueInput = document.getElementById('manual-service-value');
+  const nameInput = document.getElementById('manual-service-name');
+  
+  if (type === 'percentage') {
+    valueInput.placeholder = '10';
+    nameInput.placeholder = 'Service Charge (10%)';
+  } else {
+    valueInput.placeholder = '0.00';
+    nameInput.placeholder = 'Service Charge';
+  }
+}
+
+// NEW: Save manual service charge (for current receipt)
+async function saveManualService() {
+  if (!currentReceipt) return;
+  
+  const type = document.getElementById('manual-service-type').value;
+  const value = parseFloat(document.getElementById('manual-service-value').value);
+  let name = document.getElementById('manual-service-name').value.trim();
+  
+  if (!value || value <= 0) {
+    alert('Please enter a valid amount or percentage');
+    return;
+  }
+  
+  try {
+    let serviceAmount;
+    
+    if (type === 'percentage') {
+      // Calculate service charge based on subtotal of current receipt
+      const subtotal = currentReceipt.items
+        .filter(item => !item.is_tax_or_charge)
+        .reduce((sum, item) => sum + item.price, 0);
+      
+      serviceAmount = (subtotal * value) / 100;
+      
+      if (!name) {
+        name = `Service Charge (${value}%)`;
+      }
+    } else {
+      // Exact amount
+      serviceAmount = value;
+      
+      if (!name) {
+        name = 'Service Charge';
+      }
+    }
+    
+    // Add service charge item to current receipt
+    await addItemToReceipt(currentReceipt.id, name, serviceAmount, true, 'service');
+    
+    closeAddManualServiceModal();
+    
+    // Reload
+    await loadBill();
+    const receiptIndex = receipts.findIndex(r => r.id === currentReceipt.id);
+    currentReceipt = receipts[receiptIndex];
+    
+    renderConfigureTaxes();
+  } catch (error) {
+    console.error('Error adding manual service charge:', error);
+    alert('Failed to add service charge');
+  }
 }
 
 // Render tax items for distribution configuration
@@ -586,6 +842,7 @@ function renderConfigureTaxes() {
           </div>
           <div class="flex-gap">
             <button onclick="openTaxModal('${item.id}')" class="btn btn-primary btn-sm">Configure</button>
+            <button onclick="openEditItemModal('${item.id}')" class="btn btn-secondary btn-sm">Edit</button>
             <button onclick="deleteItemFromReceipt('${item.id}')" class="btn btn-danger btn-sm">Delete</button>
           </div>
         </div>
@@ -737,7 +994,7 @@ async function saveSplit() {
           throw new Error(errorData.error || 'Failed to save split');
         }
         
-        currentSplitItem.splits.push({ participant_id: p.id, split_type: type, value: value });
+        currentSplitItem.splits.push({ participant_id: p.id, split_type: type, value: value, participant_name: p.name });
       }
     }
     
@@ -925,5 +1182,8 @@ document.addEventListener('click', (e) => {
     closeConfigureReceiptModal();
     closeSplitModal();
     closeTaxModal();
+    closeEditItemModal();
+    closeAddManualTaxModal();
+    closeAddManualServiceModal();
   }
 });

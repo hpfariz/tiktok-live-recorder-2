@@ -1,4 +1,4 @@
-// Single Bill JavaScript
+// Single Bill JavaScript - UPDATED with new features
 const BASE_PATH = window.location.pathname.match(/^\/[^\/]+/)?.[0] || '';
 const API_BASE = window.location.origin + BASE_PATH;
 
@@ -11,6 +11,7 @@ let participants = [];
 let taxItems = [];
 let currentSplitItem = null;
 let currentTaxItem = null;
+let currentEditItem = null;
 
 // Get bill ID from URL
 function getBillId() {
@@ -230,6 +231,62 @@ async function addItem() {
   }
 }
 
+// NEW: Open edit item modal
+function openEditItemModal(itemId) {
+  currentEditItem = items.find(item => item.id === itemId);
+  if (!currentEditItem) return;
+  
+  document.getElementById('edit-item-name').value = currentEditItem.name;
+  document.getElementById('edit-item-price').value = currentEditItem.price;
+  document.getElementById('edit-item-modal').style.display = 'block';
+}
+
+// NEW: Close edit item modal
+function closeEditItemModal() {
+  document.getElementById('edit-item-modal').style.display = 'none';
+  currentEditItem = null;
+}
+
+// NEW: Save edited item
+async function saveEditedItem() {
+  if (!currentEditItem) return;
+  
+  const name = document.getElementById('edit-item-name').value.trim();
+  const price = parseFloat(document.getElementById('edit-item-price').value);
+  
+  if (!name || !price || price <= 0) {
+    alert('Please enter valid item name and price');
+    return;
+  }
+  
+  try {
+    const response = await fetch(`${API_BASE}/api/bills/item/${currentEditItem.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name,
+        price,
+        is_tax_or_charge: currentEditItem.is_tax_or_charge,
+        charge_type: currentEditItem.charge_type,
+        quantity: currentEditItem.quantity,
+        unit_price: currentEditItem.unit_price
+      })
+    });
+    
+    if (!response.ok) throw new Error('Failed to update item');
+    
+    // Update local data
+    currentEditItem.name = name;
+    currentEditItem.price = price;
+    
+    closeEditItemModal();
+    renderItems();
+  } catch (error) {
+    console.error('Error updating item:', error);
+    alert('Failed to update item');
+  }
+}
+
 // Delete item
 async function deleteItem(itemId, index) {
   if (!confirm('Delete this item?')) return;
@@ -269,7 +326,10 @@ function renderItems() {
             : item.name}</strong>
           <div class="text-secondary text-sm">${billData.currency_symbol}${item.price.toFixed(2)}</div>
         </div>
-        <button onclick="deleteItem('${item.id}', ${index})" class="btn btn-danger btn-sm">Delete</button>
+        <div class="flex-gap">
+          <button onclick="openEditItemModal('${item.id}')" class="btn btn-secondary btn-sm">Edit</button>
+          <button onclick="deleteItem('${item.id}', ${index})" class="btn btn-danger btn-sm">Delete</button>
+        </div>
       </div>
     </div>
   `).join('');
@@ -364,10 +424,10 @@ function openSplitModal(itemId) {
         
         <div id="split-options-${p.id}" style="display: ${existingSplit ? 'block' : 'none'}; margin-top: 8px; margin-left: 24px;">
           <select class="form-select mb-1" id="split-type-${p.id}" onchange="updateSplitOptions('${p.id}')">
-            <option value="equal">Equal Split</option>
-            ${currentSplitItem.quantity && currentSplitItem.quantity > 1 ? `<option value="quantity">By Quantity (max ${currentSplitItem.quantity})</option>` : ''}
-            <option value="fixed">Fixed Amount</option>
-            <option value="percent">Percentage</option>
+            <option value="equal" ${existingSplit?.split_type === 'equal' ? 'selected' : ''}>Equal Split</option>
+            ${currentSplitItem.quantity && currentSplitItem.quantity > 1 ? `<option value="quantity" ${existingSplit?.split_type === 'quantity' ? 'selected' : ''}>By Quantity (max ${currentSplitItem.quantity})</option>` : ''}
+            <option value="fixed" ${existingSplit?.split_type === 'fixed' ? 'selected' : ''}>Fixed Amount</option>
+            <option value="percent" ${existingSplit?.split_type === 'percent' ? 'selected' : ''}>Percentage</option>
           </select>
           
           <div id="split-value-container-${p.id}" style="display: ${existingSplit && existingSplit.split_type !== 'equal' ? 'block' : 'none'};">
@@ -486,7 +546,7 @@ async function saveSplit() {
           throw new Error(errorData.error || 'Failed to save split');
         }
         
-        currentSplitItem.splits.push({ participant_id: p.id, split_type: type, value: value });
+        currentSplitItem.splits.push({ participant_id: p.id, split_type: type, value: value, participant_name: p.name });
       }
     }
     
@@ -504,6 +564,22 @@ function closeSplitModal() {
   currentSplitItem = null;
 }
 
+// NEW: Get formatted names for splits display
+function getFormattedSplitNames(splits) {
+  if (!splits || splits.length === 0) return 'Not assigned yet';
+  
+  const names = splits.map(s => s.participant_name || participants.find(p => p.participant_id === s.participant_id)?.name || 'Unknown');
+  
+  if (names.length === 1) {
+    return `Split to <strong>${names[0]}</strong>`;
+  } else if (names.length === 2) {
+    return `Split between <strong>${names[0]}</strong> and <strong>${names[1]}</strong>`;
+  } else {
+    const lastPerson = names.pop();
+    return `Split among <strong>${names.join('</strong>, <strong>')}</strong>, and <strong>${lastPerson}</strong>`;
+  }
+}
+
 // Render split items
 function renderSplitItems() {
   const container = document.getElementById('split-items-list');
@@ -516,18 +592,16 @@ function renderSplitItems() {
   
   container.innerHTML = regularItems.map(item => {
     const splitCount = (item.splits || []).length;
-    const splitText = splitCount > 0 
-      ? `Split among ${splitCount} ${splitCount === 1 ? 'person' : 'people'}`
-      : 'Not assigned yet';
+    const splitText = getFormattedSplitNames(item.splits);
     
     const qtyText = (item.quantity && item.quantity > 1 && item.unit_price) 
-    ? ` (${item.quantity}x ${billData.currency_symbol}${item.unit_price.toFixed(2)})` 
-    : '';
+      ? ` (${item.quantity}x ${billData.currency_symbol}${item.unit_price.toFixed(2)})` 
+      : '';
 
     return `
-    <div class="item-list-item">
+      <div class="item-list-item">
         <div class="flex-between">
-        <div>
+          <div>
             <strong>${item.name}${qtyText}</strong>
             <div class="text-secondary text-sm">${billData.currency_symbol}${item.price.toFixed(2)}</div>
             <div class="text-sm mt-1">${splitText}</div>
@@ -547,6 +621,11 @@ function openTaxModal(itemId) {
   if (!currentTaxItem) return;
   
   document.getElementById('tax-modal-title').textContent = currentTaxItem.name;
+  
+  // Pre-select existing distribution type
+  const existingDist = currentTaxItem.tax_distribution || 'proportional';
+  document.getElementById('tax-distribution-type').value = existingDist;
+  
   document.getElementById('tax-modal').style.display = 'block';
 }
 
@@ -601,6 +680,154 @@ async function saveTaxDistribution() {
   }
 }
 
+// NEW: Show add manual tax modal
+function showAddManualTaxModal() {
+  document.getElementById('add-manual-tax-modal').style.display = 'block';
+}
+
+// NEW: Close add manual tax modal
+function closeAddManualTaxModal() {
+  document.getElementById('add-manual-tax-modal').style.display = 'none';
+  document.getElementById('manual-tax-type').value = 'percentage';
+  document.getElementById('manual-tax-value').value = '';
+  document.getElementById('manual-tax-name').value = '';
+  updateManualTaxInput();
+}
+
+// NEW: Update manual tax input based on type
+function updateManualTaxInput() {
+  const type = document.getElementById('manual-tax-type').value;
+  const valueInput = document.getElementById('manual-tax-value');
+  const nameInput = document.getElementById('manual-tax-name');
+  
+  if (type === 'percentage') {
+    valueInput.placeholder = '10';
+    nameInput.placeholder = 'Tax (10%)';
+  } else {
+    valueInput.placeholder = '0.00';
+    nameInput.placeholder = 'Tax';
+  }
+}
+
+// NEW: Save manual tax
+async function saveManualTax() {
+  const type = document.getElementById('manual-tax-type').value;
+  const value = parseFloat(document.getElementById('manual-tax-value').value);
+  let name = document.getElementById('manual-tax-name').value.trim();
+  
+  if (!value || value <= 0) {
+    alert('Please enter a valid amount or percentage');
+    return;
+  }
+  
+  try {
+    let taxAmount;
+    
+    if (type === 'percentage') {
+      // Calculate tax based on subtotal (all non-tax items)
+      const subtotal = items
+        .filter(item => !item.is_tax_or_charge)
+        .reduce((sum, item) => sum + item.price, 0);
+      
+      taxAmount = (subtotal * value) / 100;
+      
+      if (!name) {
+        name = `Tax (${value}%)`;
+      }
+    } else {
+      // Exact amount
+      taxAmount = value;
+      
+      if (!name) {
+        name = 'Tax';
+      }
+    }
+    
+    // Add tax item
+    await addItemToServer(name, taxAmount, true, 'tax');
+    
+    closeAddManualTaxModal();
+    renderTaxCharges();
+  } catch (error) {
+    console.error('Error adding manual tax:', error);
+    alert('Failed to add tax');
+  }
+}
+
+// NEW: Show add manual service charge modal
+function showAddManualServiceModal() {
+  document.getElementById('add-manual-service-modal').style.display = 'block';
+}
+
+// NEW: Close add manual service charge modal
+function closeAddManualServiceModal() {
+  document.getElementById('add-manual-service-modal').style.display = 'none';
+  document.getElementById('manual-service-type').value = 'percentage';
+  document.getElementById('manual-service-value').value = '';
+  document.getElementById('manual-service-name').value = '';
+  updateManualServiceInput();
+}
+
+// NEW: Update manual service input based on type
+function updateManualServiceInput() {
+  const type = document.getElementById('manual-service-type').value;
+  const valueInput = document.getElementById('manual-service-value');
+  const nameInput = document.getElementById('manual-service-name');
+  
+  if (type === 'percentage') {
+    valueInput.placeholder = '10';
+    nameInput.placeholder = 'Service Charge (10%)';
+  } else {
+    valueInput.placeholder = '0.00';
+    nameInput.placeholder = 'Service Charge';
+  }
+}
+
+// NEW: Save manual service charge
+async function saveManualService() {
+  const type = document.getElementById('manual-service-type').value;
+  const value = parseFloat(document.getElementById('manual-service-value').value);
+  let name = document.getElementById('manual-service-name').value.trim();
+  
+  if (!value || value <= 0) {
+    alert('Please enter a valid amount or percentage');
+    return;
+  }
+  
+  try {
+    let serviceAmount;
+    
+    if (type === 'percentage') {
+      // Calculate service charge based on subtotal (all non-tax items)
+      const subtotal = items
+        .filter(item => !item.is_tax_or_charge)
+        .reduce((sum, item) => sum + item.price, 0);
+      
+      serviceAmount = (subtotal * value) / 100;
+      
+      if (!name) {
+        name = `Service Charge (${value}%)`;
+      }
+    } else {
+      // Exact amount
+      serviceAmount = value;
+      
+      if (!name) {
+        name = 'Service Charge';
+      }
+    }
+    
+    // Add service charge item
+    await addItemToServer(name, serviceAmount, true, 'service');
+    
+    closeAddManualServiceModal();
+    renderTaxCharges();
+  } catch (error) {
+    console.error('Error adding manual service charge:', error);
+    alert('Failed to add service charge');
+  }
+}
+
 // Render tax charges
 function renderTaxCharges() {
   const container = document.getElementById('tax-charges-list');
@@ -630,7 +857,10 @@ function renderTaxCharges() {
             <div class="text-secondary text-sm">${billData.currency_symbol}${item.price.toFixed(2)}</div>
             <div class="text-sm mt-1">${distText}</div>
           </div>
-          <button onclick="openTaxModal('${item.id}')" class="btn btn-primary btn-sm">Configure</button>
+          <div class="flex-gap">
+            <button onclick="openTaxModal('${item.id}')" class="btn btn-primary btn-sm">Configure</button>
+            <button onclick="deleteItem('${item.id}', ${items.indexOf(item)})" class="btn btn-danger btn-sm">Delete</button>
+          </div>
         </div>
       </div>
     `;
@@ -726,5 +956,8 @@ document.addEventListener('click', (e) => {
   if (e.target.classList.contains('modal-overlay')) {
     closeSplitModal();
     closeTaxModal();
+    closeEditItemModal();
+    closeAddManualTaxModal();
+    closeAddManualServiceModal();
   }
 });

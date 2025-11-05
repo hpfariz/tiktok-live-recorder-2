@@ -99,7 +99,8 @@
 
     <!-- Receipts (if any) -->
     <div class="card" id="receipts-card" style="display: none;">
-      <div class="card-title">📸 Receipts</div>
+      <div class="card-title">📸 Receipts & Bills</div>
+      <p class="text-secondary text-sm mb-3">All receipts and manually entered items</p>
       <div id="receipts-gallery" class="grid grid-3"></div>
     </div>
 
@@ -139,14 +140,38 @@
     <div class="modal-overlay">
       <div class="modal">
         <div class="modal-header">
-          <h3 class="modal-title">Receipt Image</h3>
+          <h3 class="modal-title" id="receipt-modal-title">Receipt Image</h3>
+          <p class="text-secondary text-sm" id="receipt-modal-payer" style="margin-top: 4px;"></p>
         </div>
         <div class="modal-body">
           <img id="receipt-modal-image" src="" alt="Receipt" style="width: 100%; height: auto;">
         </div>
         <div class="modal-footer">
-          <a id="receipt-download-link" href="" download class="btn btn-secondary">Download</a>
+          <button type="button" class="btn btn-secondary" id="receipt-download-btn">Download</button>
           <button type="button" class="btn btn-primary" onclick="closeReceiptModal()">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Receipt Details Modal (for manual items) -->
+  <div id="receipt-details-modal" style="display: none;">
+    <div class="modal-overlay">
+      <div class="modal">
+        <div class="modal-header">
+          <h3 class="modal-title" id="receipt-details-modal-title">Receipt Details</h3>
+          <p class="text-secondary text-sm" id="receipt-details-modal-payer" style="margin-top: 4px;"></p>
+        </div>
+        <div class="modal-body">
+          <div id="receipt-details-items-list"></div>
+          <div class="divider"></div>
+          <div class="flex-between">
+            <strong>Total:</strong>
+            <strong id="receipt-details-total">-</strong>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-primary" onclick="closeReceiptDetailsModal()">Close</button>
         </div>
       </div>
     </div>
