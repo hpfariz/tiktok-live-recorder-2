@@ -1,10 +1,10 @@
 #!/bin/bash
 
-# Split Bill Bug Fixes - Verification Script
-# Run this after deploying fixes to verify everything is working
+# Split Bill - Verify All Improvements Deployment
+# Run this after deploying to verify everything works
 
-echo "🔍 Split Bill Bug Fixes - Verification"
-echo "======================================="
+echo "🔍 Split Bill - Verifying All Improvements"
+echo "==========================================="
 echo ""
 
 SERVER="ubuntu@152.69.214.36"
@@ -27,42 +27,57 @@ print_warn() {
     echo -e "${YELLOW}⚠${NC} $1"
 }
 
-# Test 1: Check if receipt_id column exists
-echo "Test 1: Checking if receipt_id column exists in payments table..."
-SCHEMA=$(ssh $SERVER "cd $REMOTE_PATH && sqlite3 data/splitbill.db 'PRAGMA table_info(payments);'")
+print_test() {
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "$1"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+}
 
-if echo "$SCHEMA" | grep -q "receipt_id"; then
-    print_check "receipt_id column exists"
+# Test 1: Check database schema changes
+print_test "Test 1: Database Schema"
+
+echo "Checking payment_details table..."
+PAYMENT_TABLE=$(ssh $SERVER "cd $REMOTE_PATH && sqlite3 data/splitbill.db 'SELECT name FROM sqlite_master WHERE type=\"table\" AND name=\"payment_details\";'")
+
+if [ "$PAYMENT_TABLE" = "payment_details" ]; then
+    print_check "payment_details table exists"
 else
-    print_fail "receipt_id column NOT found - migration may not have run"
+    print_fail "payment_details table NOT found"
+    echo "Run: node database/migrate-payment-details.js"
     exit 1
 fi
-echo ""
 
-# Test 2: Check for duplicate payments
-echo "Test 2: Checking for duplicate payments..."
-DUPLICATES=$(ssh $SERVER "cd $REMOTE_PATH && sqlite3 data/splitbill.db 'SELECT COUNT(*) FROM (SELECT payer_id, amount, COUNT(*) as cnt FROM payments GROUP BY payer_id, amount HAVING cnt > 1);'")
+echo "Checking items table columns..."
+ITEMS_SCHEMA=$(ssh $SERVER "cd $REMOTE_PATH && sqlite3 data/splitbill.db 'PRAGMA table_info(items);'")
 
-if [ "$DUPLICATES" = "0" ]; then
-    print_check "No duplicate payments found"
+if echo "$ITEMS_SCHEMA" | grep -q "quantity"; then
+    print_check "quantity column exists in items table"
 else
-    print_warn "$DUPLICATES duplicate payment groups found - cleanup may be needed"
+    print_fail "quantity column NOT found in items table"
 fi
-echo ""
 
-# Test 3: Check service status
-echo "Test 3: Checking service status..."
+if echo "$ITEMS_SCHEMA" | grep -q "unit_price"; then
+    print_check "unit_price column exists in items table"
+else
+    print_fail "unit_price column NOT found in items table"
+fi
+
+# Test 2: Check service status
+print_test "Test 2: Service Status"
+
 if ssh $SERVER "systemctl is-active --quiet split-bill.service"; then
     print_check "Service is running"
 else
     print_fail "Service is NOT running"
-    echo "View logs: ssh $SERVER 'sudo journalctl -u split-bill -n 50'"
+    echo "Start with: sudo systemctl start split-bill.service"
     exit 1
 fi
-echo ""
 
-# Test 4: Test API endpoint
-echo "Test 4: Testing API health endpoint..."
+# Test 3: Check API endpoints
+print_test "Test 3: API Endpoints"
+
+echo "Testing health endpoint..."
 HTTP_CODE=$(ssh $SERVER "curl -s -o /dev/null -w '%{http_code}' http://localhost:3001/split-bill/health")
 
 if [ "$HTTP_CODE" = "200" ]; then
@@ -71,38 +86,128 @@ else
     print_fail "API is not responding correctly (HTTP $HTTP_CODE)"
     exit 1
 fi
-echo ""
 
-# Test 5: Check specific bill (if exists)
-echo "Test 5: Checking bill dcHKSxvr2M (if exists)..."
-BILL_EXISTS=$(ssh $SERVER "cd $REMOTE_PATH && sqlite3 data/splitbill.db 'SELECT COUNT(*) FROM bills WHERE id=\"dcHKSxvr2M\";'")
+# Test 4: Check frontend files
+print_test "Test 4: Frontend Files"
 
-if [ "$BILL_EXISTS" != "0" ]; then
-    print_check "Bill dcHKSxvr2M found"
-    
-    # Check Fariz's payment (should be 1,070,000 not 1,635,000)
-    FARIZ_PAID=$(ssh $SERVER "cd $REMOTE_PATH && sqlite3 data/splitbill.db 'SELECT TOTAL(p.amount) FROM payments p JOIN participants pt ON p.payer_id = pt.id WHERE pt.name=\"Fariz\" AND p.bill_id=\"dcHKSxvr2M\";'")
-    
-    echo "  - Fariz paid: Rp $FARIZ_PAID"
-    
-    if [ "$(echo "$FARIZ_PAID < 1100000" | bc)" = "1" ]; then
-        print_check "Fariz's payment looks correct (not duplicated)"
+echo "Checking required files..."
+
+files=(
+    "public/results.html"
+    "public/js/results.js"
+    "public/js/utils.js"
+    "public/css/style.css"
+    "public/js/single-bill.js"
+    "public/js/multi-bill.js"
+)
+
+all_found=true
+for file in "${files[@]}"; do
+    if ssh $SERVER "[ -f $REMOTE_PATH/$file ]"; then
+        print_check "$file exists"
     else
-        print_warn "Fariz's payment may still have duplicates"
+        print_fail "$file is MISSING"
+        all_found=false
     fi
-else
-    print_warn "Bill dcHKSxvr2M not found (may have expired or been deleted)"
+done
+
+if [ "$all_found" = false ]; then
+    echo ""
+    echo "Some files are missing. Please redeploy."
+    exit 1
 fi
-echo ""
 
-# Test 6: Check database size
-echo "Test 6: Database health check..."
-DB_SIZE=$(ssh $SERVER "du -h $REMOTE_PATH/data/splitbill.db | cut -f1")
-print_check "Database size: $DB_SIZE"
-echo ""
+# Test 5: Check backend files
+print_test "Test 5: Backend Files"
 
-# Test 7: Check recent logs for errors
-echo "Test 7: Checking recent logs for errors..."
+echo "Checking backend files..."
+
+backend_files=(
+    "routes/payment-details.js"
+    "routes/ocr.js"
+    "database/migrate-payment-details.js"
+)
+
+for file in "${backend_files[@]}"; do
+    if ssh $SERVER "[ -f $REMOTE_PATH/$file ]"; then
+        print_check "$file exists"
+    else
+        print_fail "$file is MISSING"
+        all_found=false
+    fi
+done
+
+# Test 6: Check routes registration
+print_test "Test 6: Routes Registration"
+
+echo "Checking if server.js has payment-details routes..."
+if ssh $SERVER "grep -q 'payment-details' $REMOTE_PATH/server.js"; then
+    print_check "Payment details routes registered in server.js"
+else
+    print_warn "Payment details routes may not be registered"
+fi
+
+# Test 7: Create test data and verify
+print_test "Test 7: Functional Tests"
+
+echo "Creating test bill..."
+TEST_RESPONSE=$(ssh $SERVER "curl -s -X POST http://localhost:3001/split-bill/api/bills/create \
+  -H 'Content-Type: application/json' \
+  -d '{\"title\":\"Test Verification Bill\",\"mode\":\"single\",\"currency_symbol\":\"Rp\"}'")
+
+TEST_BILL_ID=$(echo $TEST_RESPONSE | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
+
+if [ -n "$TEST_BILL_ID" ]; then
+    print_check "Test bill created: $TEST_BILL_ID"
+    
+    # Add participant
+    echo "Adding test participant..."
+    PARTICIPANT_RESPONSE=$(ssh $SERVER "curl -s -X POST http://localhost:3001/split-bill/api/bills/$TEST_BILL_ID/participant \
+      -H 'Content-Type: application/json' \
+      -d '{\"name\":\"Test User\"}'")
+    
+    PARTICIPANT_ID=$(echo $PARTICIPANT_RESPONSE | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
+    
+    if [ -n "$PARTICIPANT_ID" ]; then
+        print_check "Test participant created: $PARTICIPANT_ID"
+        
+        # Test payment details endpoint
+        echo "Testing payment details endpoint..."
+        PAYMENT_DETAILS_CODE=$(ssh $SERVER "curl -s -o /dev/null -w '%{http_code}' \
+          http://localhost:3001/split-bill/api/payment-details/$PARTICIPANT_ID")
+        
+        if [ "$PAYMENT_DETAILS_CODE" = "200" ]; then
+            print_check "Payment details endpoint working (HTTP $PAYMENT_DETAILS_CODE)"
+        else
+            print_fail "Payment details endpoint failed (HTTP $PAYMENT_DETAILS_CODE)"
+        fi
+        
+        # Test DELETE participant endpoint
+        echo "Testing DELETE participant endpoint..."
+        DELETE_CODE=$(ssh $SERVER "curl -s -o /dev/null -w '%{http_code}' -X DELETE \
+          http://localhost:3001/split-bill/api/bills/participant/$PARTICIPANT_ID")
+        
+        if [ "$DELETE_CODE" = "200" ]; then
+            print_check "DELETE participant endpoint working (HTTP $DELETE_CODE)"
+        else
+            print_fail "DELETE participant endpoint failed (HTTP $DELETE_CODE)"
+        fi
+    else
+        print_warn "Could not create test participant"
+    fi
+    
+    # Cleanup test bill
+    echo "Cleaning up test data..."
+    ssh $SERVER "cd $REMOTE_PATH && sqlite3 data/splitbill.db 'DELETE FROM bills WHERE id=\"$TEST_BILL_ID\";'" 2>/dev/null
+    print_check "Test data cleaned up"
+else
+    print_warn "Could not create test bill - manual testing recommended"
+fi
+
+# Test 8: Check logs for errors
+print_test "Test 8: Recent Logs"
+
+echo "Checking for errors in recent logs..."
 ERRORS=$(ssh $SERVER "sudo journalctl -u split-bill --since '5 minutes ago' | grep -i error | wc -l")
 
 if [ "$ERRORS" = "0" ]; then
@@ -111,22 +216,48 @@ else
     print_warn "$ERRORS error(s) found in recent logs"
     echo "View logs: ssh $SERVER 'sudo journalctl -u split-bill -f'"
 fi
-echo ""
 
-echo "======================================="
-echo -e "${GREEN}✓ Verification Complete!${NC}"
-echo "======================================="
+# Test 9: Check file permissions
+print_test "Test 9: File Permissions"
+
+echo "Checking directory permissions..."
+UPLOADS_PERM=$(ssh $SERVER "[ -d $REMOTE_PATH/uploads ] && [ -w $REMOTE_PATH/uploads ] && echo 'ok' || echo 'fail'")
+DATA_PERM=$(ssh $SERVER "[ -d $REMOTE_PATH/data ] && [ -w $REMOTE_PATH/data ] && echo 'ok' || echo 'fail'")
+
+if [ "$UPLOADS_PERM" = "ok" ]; then
+    print_check "uploads directory is writable"
+else
+    print_fail "uploads directory not writable"
+fi
+
+if [ "$DATA_PERM" = "ok" ]; then
+    print_check "data directory is writable"
+else
+    print_fail "data directory not writable"
+fi
+
+# Summary
+print_test "Summary"
+
 echo ""
-echo "Summary:"
-echo "  ✓ Database schema updated"
-echo "  ✓ Service running"
-echo "  ✓ API responding"
+echo "✅ Deployment verification complete!"
 echo ""
-echo "Next steps:"
-echo "  1. Test the app: http://152.69.214.36/split-bill/"
-echo "  2. Create a new multi-bill and configure receipts multiple times"
-echo "  3. Check participant breakdowns to verify tax items appear"
+echo "🌐 Access your app at: http://152.69.214.36/split-bill/"
 echo ""
-echo "Monitor logs:"
+echo "📋 Features to test manually:"
+echo "  1. Participant deletion - verify they don't reappear"
+echo "  2. OCR with quantity items - check format"
+echo "  3. Receipt breakdown tab - expand receipts"
+echo "  4. Item display format - verify quantity shown"
+echo "  5. Price formatting - check thousand separators"
+echo "  6. Payment details - add/copy/delete"
+echo ""
+echo "📊 Monitor logs:"
 echo "  ssh $SERVER 'sudo journalctl -u split-bill -f'"
+echo ""
+echo "🐛 If issues found:"
+echo "  1. Check logs for errors"
+echo "  2. Verify database migration ran"
+echo "  3. Restart service: sudo systemctl restart split-bill"
+echo "  4. Clear browser cache and retry"
 echo ""

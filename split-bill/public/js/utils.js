@@ -67,12 +67,71 @@ function parsePrice(priceStr) {
   return parseFloat(priceStr.replace(/[^\d.-]/g, '')) || 0;
 }
 
+/**
+ * Copy text to clipboard
+ * @param {string} text - Text to copy
+ * @returns {Promise<boolean>} Success status
+ */
+async function copyToClipboard(text) {
+  if (navigator.clipboard) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (err) {
+      return fallbackCopy(text);
+    }
+  } else {
+    return fallbackCopy(text);
+  }
+}
+
+/**
+ * Fallback copy method for older browsers
+ * @param {string} text - Text to copy
+ * @returns {boolean} Success status
+ */
+function fallbackCopy(text) {
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+  document.body.appendChild(textarea);
+  textarea.select();
+  
+  try {
+    document.execCommand('copy');
+    document.body.removeChild(textarea);
+    return true;
+  } catch (err) {
+    document.body.removeChild(textarea);
+    return false;
+  }
+}
+
+/**
+ * Show copy feedback
+ * @param {HTMLElement} button - Button element to show feedback on
+ */
+function showCopyFeedback(button) {
+  const originalText = button.innerHTML;
+  button.classList.add('copied');
+  button.innerHTML = '✓ Copied';
+  
+  setTimeout(() => {
+    button.classList.remove('copied');
+    button.innerHTML = originalText;
+  }, 2000);
+}
+
 // Export to global scope
 if (typeof window !== 'undefined') {
   window.SplitBillUtils = {
     formatPrice,
     formatItemDisplay,
     formatItemDisplayHTML,
-    parsePrice
+    parsePrice,
+    copyToClipboard,
+    fallbackCopy,
+    showCopyFeedback
   };
 }

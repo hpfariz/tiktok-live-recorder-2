@@ -90,11 +90,27 @@
       </div>
     </div>
 
-    <!-- Item Breakdown by Participant (Expandable) -->
+    <!-- Item Breakdown - NEW: Tabs for Participant and Receipt views -->
     <div class="card">
       <div class="card-title">📝 Item Breakdown</div>
-      <p class="text-secondary text-sm mb-3">Click a participant to see their items</p>
-      <div id="participant-breakdowns"></div>
+      
+      <!-- Tabs -->
+      <div class="tabs">
+        <button class="tab active" onclick="switchBreakdownTab('participant')">By Participant</button>
+        <button class="tab" onclick="switchBreakdownTab('receipt')">By Receipt</button>
+      </div>
+
+      <!-- By Participant Tab -->
+      <div id="breakdown-by-participant" class="tab-content active">
+        <p class="text-secondary text-sm mb-3">Click a participant to see their items</p>
+        <div id="participant-breakdowns"></div>
+      </div>
+
+      <!-- By Receipt Tab - NEW -->
+      <div id="breakdown-by-receipt" class="tab-content">
+        <p class="text-secondary text-sm mb-3">Expand a receipt to see item assignments</p>
+        <div id="receipt-breakdowns"></div>
+      </div>
     </div>
 
     <!-- Receipts (if any) -->
@@ -127,9 +143,53 @@
             <strong>Total:</strong>
             <strong id="breakdown-total">-</strong>
           </div>
+
+          <!-- Payment Details Section - NEW -->
+          <div id="breakdown-payment-details" class="payment-details-section" style="display: none;">
+            <div class="flex-between mb-2">
+              <strong>Payment Details</strong>
+              <button class="btn btn-secondary btn-sm" onclick="showAddPaymentDetailModal()">+ Add</button>
+            </div>
+            <div id="breakdown-payment-details-list"></div>
+          </div>
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-primary" onclick="closeBreakdownModal()">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Payment Detail Modal - NEW -->
+  <div id="add-payment-detail-modal" style="display: none;">
+    <div class="modal-overlay">
+      <div class="modal">
+        <div class="modal-header">
+          <h3 class="modal-title">Add Payment Detail</h3>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label">Bank / E-Wallet Provider</label>
+            <input type="text" id="payment-provider" class="form-input" placeholder="e.g., Bank Mandiri, BCA, Gopay, OVO">
+            <div class="form-help">Enter the name of your bank or e-wallet provider</div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Account Number / Phone Number</label>
+            <input type="text" id="payment-account" class="form-input" placeholder="e.g., 1234567890">
+            <div class="form-help">Bank account number or phone number for e-wallets</div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">
+              <input type="checkbox" id="payment-is-primary" style="margin-right: 8px;">
+              Set as primary payment method
+            </label>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeAddPaymentDetailModal()">Cancel</button>
+          <button type="button" class="btn btn-primary" onclick="savePaymentDetail()">Save</button>
         </div>
       </div>
     </div>
@@ -177,6 +237,7 @@
     </div>
   </div>
 
+  <script src="js/utils.js"></script>
   <script src="js/results.js"></script>
 </body>
 </html>

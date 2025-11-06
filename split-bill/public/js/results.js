@@ -1,4 +1,4 @@
-// Results JavaScript - UPDATED with improved download and receipt display
+// Results JavaScript - UPDATED with receipt breakdown and payment details
 const BASE_PATH = window.location.pathname.match(/^\/[^\/]+/)?.[0] || '';
 const API_BASE = window.location.origin + BASE_PATH;
 
@@ -6,6 +6,8 @@ const API_BASE = window.location.origin + BASE_PATH;
 let billId = null;
 let billData = null;
 let settlements = null;
+let currentParticipantId = null;
+let currentBreakdownTab = 'participant';
 
 // Get bill ID from URL
 function getBillId() {
@@ -48,6 +50,7 @@ async function loadResults() {
     renderOptimizedSettlements();
     renderRawDebts();
     renderParticipantBreakdowns();
+    renderReceiptBreakdowns(); // NEW
     renderReceipts();
     
   } catch (error) {
@@ -79,7 +82,7 @@ function renderBillInfo() {
   
   document.getElementById('bill-created').textContent = new Date(billData.created_at).toLocaleDateString();
   document.getElementById('bill-expires').textContent = new Date(billData.expires_at).toLocaleDateString();
-  document.getElementById('bill-total').textContent = `${billData.currency_symbol}${total.toFixed(2)}`;
+  document.getElementById('bill-total').textContent = window.SplitBillUtils.formatPrice(total, billData.currency_symbol);
 }
 
 // Render participants summary
@@ -93,15 +96,15 @@ function renderParticipantsSummary() {
   
   tbody.innerHTML = settlements.participants.map(p => {
     const balanceClass = p.balance > 0 ? 'text-success' : p.balance < 0 ? 'text-danger' : '';
-    const balanceText = p.balance > 0 ? `+${billData.currency_symbol}${p.balance.toFixed(2)}` : 
-                        p.balance < 0 ? `-${billData.currency_symbol}${Math.abs(p.balance).toFixed(2)}` :
-                        `${billData.currency_symbol}0.00`;
+    const balanceText = p.balance > 0 ? `+${window.SplitBillUtils.formatPrice(p.balance, billData.currency_symbol)}` : 
+                        p.balance < 0 ? `-${window.SplitBillUtils.formatPrice(Math.abs(p.balance), billData.currency_symbol)}` :
+                        window.SplitBillUtils.formatPrice(0, billData.currency_symbol);
     
     return `
       <tr>
         <td><strong>${p.name}</strong></td>
-        <td class="text-right">${billData.currency_symbol}${p.owes.toFixed(2)}</td>
-        <td class="text-right">${billData.currency_symbol}${p.paid.toFixed(2)}</td>
+        <td class="text-right">${window.SplitBillUtils.formatPrice(p.owes, billData.currency_symbol)}</td>
+        <td class="text-right">${window.SplitBillUtils.formatPrice(p.paid, billData.currency_symbol)}</td>
         <td class="text-right ${balanceClass}"><strong>${balanceText}</strong></td>
       </tr>
     `;
@@ -126,7 +129,7 @@ function renderOptimizedSettlements() {
       <div>
         <strong>${s.from}</strong> pays <strong>${s.to}</strong>
       </div>
-      <div class="settlement-amount">${billData.currency_symbol}${s.amount.toFixed(2)}</div>
+      <div class="settlement-amount">${window.SplitBillUtils.formatPrice(s.amount, billData.currency_symbol)}</div>
     </div>
   `).join('');
   
@@ -152,7 +155,7 @@ function renderRawDebts() {
       <div>
         <strong>${d.from}</strong> owes <strong>${d.to}</strong>
       </div>
-      <div>${billData.currency_symbol}${d.amount.toFixed(2)}</div>
+      <div>${window.SplitBillUtils.formatPrice(d.amount, billData.currency_symbol)}</div>
     </div>
   `).join('');
 }
@@ -168,6 +171,27 @@ function toggleRawDebts() {
   } else {
     content.style.display = 'none';
     toggle.textContent = '▼';
+  }
+}
+
+// Switch breakdown tab - NEW
+function switchBreakdownTab(tab) {
+  currentBreakdownTab = tab;
+  
+  // Update tab buttons
+  document.querySelectorAll('.tab').forEach(btn => {
+    btn.classList.remove('active');
+  });
+  event.target.classList.add('active');
+  
+  // Update tab content
+  document.getElementById('breakdown-by-participant').classList.remove('active');
+  document.getElementById('breakdown-by-receipt').classList.remove('active');
+  
+  if (tab === 'participant') {
+    document.getElementById('breakdown-by-participant').classList.add('active');
+  } else {
+    document.getElementById('breakdown-by-receipt').classList.add('active');
   }
 }
 
@@ -188,14 +212,131 @@ function renderParticipantBreakdowns() {
     >
       <div class="flex-between">
         <span><strong>${p.name}</strong></span>
-        <span>${billData.currency_symbol}${p.owes.toFixed(2)}</span>
+        <span>${window.SplitBillUtils.formatPrice(p.owes, billData.currency_symbol)}</span>
       </div>
     </button>
   `).join('');
 }
 
+// Render receipt breakdowns - NEW
+async function renderReceiptBreakdowns() {
+  const container = document.getElementById('receipt-breakdowns');
+  
+  if (!billData.receipts || billData.receipts.length === 0) {
+    container.innerHTML = '<div class="text-secondary">No receipts found</div>';
+    return;
+  }
+  
+  container.innerHTML = '';
+  
+  for (let i = 0; i < billData.receipts.length; i++) {
+    const receipt = billData.receipts[i];
+    const items = receipt.items || [];
+    const total = items.reduce((sum, item) => sum + item.price, 0);
+    
+    // Get payer name
+    let payerName = 'Unknown';
+    if (billData.payments) {
+      const payment = billData.payments.find(p => p.receipt_id === receipt.id);
+      if (payment) {
+        payerName = payment.payer_name;
+      }
+    }
+    
+    const itemCount = items.filter(i => !i.is_tax_or_charge).length;
+    
+    const accordionItem = document.createElement('div');
+    accordionItem.className = 'accordion-item';
+    accordionItem.innerHTML = `
+      <div class="accordion-header" onclick="toggleReceiptAccordion(${i})">
+        <div>
+          <div class="accordion-title">Receipt ${i + 1} ${receipt.image_path ? '📸' : '✏️'}</div>
+          <div class="text-secondary text-sm">
+            ${itemCount} item${itemCount !== 1 ? 's' : ''} • ${window.SplitBillUtils.formatPrice(total, billData.currency_symbol)} • Paid by ${payerName}
+          </div>
+        </div>
+        <span class="accordion-icon">▼</span>
+      </div>
+      <div class="accordion-content">
+        <div class="accordion-body" id="receipt-accordion-${i}">
+          <div class="loading">Loading items...</div>
+        </div>
+      </div>
+    `;
+    
+    container.appendChild(accordionItem);
+  }
+}
+
+// Toggle receipt accordion - NEW
+async function toggleReceiptAccordion(index) {
+  const accordionItem = document.querySelectorAll('.accordion-item')[index];
+  const isOpen = accordionItem.classList.contains('open');
+  
+  if (isOpen) {
+    accordionItem.classList.remove('open');
+    return;
+  }
+  
+  accordionItem.classList.add('open');
+  
+  // Load receipt breakdown if not loaded
+  const contentDiv = document.getElementById(`receipt-accordion-${index}`);
+  if (contentDiv.innerHTML.includes('Loading')) {
+    await loadReceiptBreakdown(index, contentDiv);
+  }
+}
+
+// Load receipt breakdown - NEW
+async function loadReceiptBreakdown(index, contentDiv) {
+  try {
+    const receipt = billData.receipts[index];
+    const response = await fetch(`${API_BASE}/api/settlements/${billId}/receipt/${receipt.id}`);
+    
+    if (!response.ok) throw new Error('Failed to load breakdown');
+    
+    const breakdown = await response.json();
+    
+    let html = '';
+    
+    for (const item of breakdown.items) {
+      const assigneeNames = item.assignees.map(a => {
+        let display = a.name;
+        if (a.split_type === 'fixed') {
+          display += ` (${window.SplitBillUtils.formatPrice(a.value, billData.currency_symbol)})`;
+        } else if (a.split_type === 'percent') {
+          display += ` (${a.value}%)`;
+        } else if (a.split_type === 'quantity') {
+          display += ` (${a.value}x)`;
+        }
+        return display;
+      }).join(', ') || 'Not assigned';
+      
+      const itemDisplay = window.SplitBillUtils.formatItemDisplayHTML(item, billData.currency_symbol);
+      
+      html += `
+        <div class="receipt-item-row">
+          <div class="receipt-item-name">
+            ${itemDisplay}
+            ${item.is_tax_or_charge ? '<span class="badge" style="margin-left: 8px;">Tax/Charge</span>' : ''}
+          </div>
+          <div class="receipt-item-assignees">${assigneeNames}</div>
+          <div class="receipt-item-price">${window.SplitBillUtils.formatPrice(item.price, billData.currency_symbol)}</div>
+        </div>
+      `;
+    }
+    
+    contentDiv.innerHTML = html;
+  } catch (error) {
+    console.error('Error loading receipt breakdown:', error);
+    contentDiv.innerHTML = '<div class="alert alert-error">Failed to load breakdown</div>';
+  }
+}
+
 // Show participant breakdown
 async function showParticipantBreakdown(participantId, participantName) {
+  currentParticipantId = participantId;
+  
   try {
     const response = await fetch(`${API_BASE}/api/settlements/${billId}/participant/${participantId}`);
     if (!response.ok) throw new Error('Failed to load breakdown');
@@ -204,28 +345,36 @@ async function showParticipantBreakdown(participantId, participantName) {
     
     document.getElementById('breakdown-participant-name').textContent = participantName;
     document.getElementById('breakdown-total').textContent = 
-      `${breakdown.currency_symbol}${breakdown.total.toFixed(2)}`;
+      window.SplitBillUtils.formatPrice(breakdown.total, breakdown.currency_symbol);
     
     const itemsList = document.getElementById('breakdown-items-list');
     
     if (breakdown.items.length === 0) {
       itemsList.innerHTML = '<div class="text-secondary">No items assigned</div>';
     } else {
-      itemsList.innerHTML = breakdown.items.map(item => `
-        <div class="flex-between" style="padding: 8px 0; border-bottom: 1px solid var(--color-border);">
-          <div>
-            <div><strong>${item.item_name}</strong></div>
-            <div class="text-secondary text-sm">
-              ${item.split_type === 'equal' ? 'Equal split' :
-                item.split_type === 'fixed' ? 'Fixed amount' :
-                item.split_type === 'percent' ? `${item.split_value}%` :
-                item.split_type === 'proportional' ? 'Proportional' : ''}
+      itemsList.innerHTML = breakdown.items.map(item => {
+        const itemDisplay = window.SplitBillUtils.formatItemDisplayHTML(item, breakdown.currency_symbol);
+        
+        return `
+          <div class="flex-between" style="padding: 8px 0; border-bottom: 1px solid var(--color-border);">
+            <div>
+              <div>${itemDisplay}</div>
+              <div class="text-secondary text-sm">
+                ${item.split_type === 'equal' ? 'Equal split' :
+                  item.split_type === 'fixed' ? 'Fixed amount' :
+                  item.split_type === 'percent' ? `${item.split_value}%` :
+                  item.split_type === 'quantity' ? `${item.split_value} items` :
+                  item.split_type === 'proportional' ? 'Proportional' : ''}
+              </div>
             </div>
+            <div>${window.SplitBillUtils.formatPrice(item.amount, breakdown.currency_symbol)}</div>
           </div>
-          <div>${breakdown.currency_symbol}${item.amount.toFixed(2)}</div>
-        </div>
-      `).join('');
+        `;
+      }).join('');
     }
+    
+    // Load payment details - NEW
+    await loadPaymentDetails(participantId);
     
     document.getElementById('breakdown-modal').style.display = 'block';
   } catch (error) {
@@ -234,12 +383,138 @@ async function showParticipantBreakdown(participantId, participantName) {
   }
 }
 
+// Load payment details - NEW
+async function loadPaymentDetails(participantId) {
+  try {
+    const response = await fetch(`${API_BASE}/api/payment-details/${participantId}`);
+    if (!response.ok) {
+      document.getElementById('breakdown-payment-details').style.display = 'none';
+      return;
+    }
+    
+    const paymentDetails = await response.json();
+    
+    const detailsSection = document.getElementById('breakdown-payment-details');
+    const detailsList = document.getElementById('breakdown-payment-details-list');
+    
+    if (paymentDetails.length === 0) {
+      detailsList.innerHTML = `
+        <div class="payment-details-empty">
+          No payment details added yet. Click "+ Add" to add payment information.
+        </div>
+      `;
+    } else {
+      detailsList.innerHTML = paymentDetails.map(detail => `
+        <div class="payment-detail-item">
+          <div class="payment-detail-info">
+            <div class="payment-detail-provider">
+              ${detail.provider_name}
+              ${detail.is_primary ? '<span class="payment-detail-primary-badge">Primary</span>' : ''}
+            </div>
+            <div class="payment-detail-account">
+              ${detail.account_number}
+              <button class="copy-btn" onclick="copyAccountNumber('${detail.account_number}', event)">
+                📋 Copy
+              </button>
+            </div>
+          </div>
+          <div class="payment-detail-actions">
+            <button class="btn btn-secondary btn-sm" onclick="deletePaymentDetail('${detail.id}')">Delete</button>
+          </div>
+        </div>
+      `).join('');
+    }
+    
+    detailsSection.style.display = 'block';
+  } catch (error) {
+    console.error('Error loading payment details:', error);
+    document.getElementById('breakdown-payment-details').style.display = 'none';
+  }
+}
+
+// Copy account number - NEW
+async function copyAccountNumber(accountNumber, event) {
+  const button = event.target;
+  const success = await window.SplitBillUtils.copyToClipboard(accountNumber);
+  
+  if (success) {
+    window.SplitBillUtils.showCopyFeedback(button);
+  } else {
+    alert('Failed to copy. Please copy manually: ' + accountNumber);
+  }
+}
+
+// Show add payment detail modal - NEW
+function showAddPaymentDetailModal() {
+  document.getElementById('payment-provider').value = '';
+  document.getElementById('payment-account').value = '';
+  document.getElementById('payment-is-primary').checked = false;
+  document.getElementById('add-payment-detail-modal').style.display = 'block';
+}
+
+// Close add payment detail modal - NEW
+function closeAddPaymentDetailModal() {
+  document.getElementById('add-payment-detail-modal').style.display = 'none';
+}
+
+// Save payment detail - NEW
+async function savePaymentDetail() {
+  const provider = document.getElementById('payment-provider').value.trim();
+  const account = document.getElementById('payment-account').value.trim();
+  const isPrimary = document.getElementById('payment-is-primary').checked;
+  
+  if (!provider || !account) {
+    alert('Please fill in all fields');
+    return;
+  }
+  
+  try {
+    const response = await fetch(`${API_BASE}/api/payment-details`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        participant_id: currentParticipantId,
+        provider_name: provider,
+        account_number: account,
+        is_primary: isPrimary
+      })
+    });
+    
+    if (!response.ok) throw new Error('Failed to save payment detail');
+    
+    closeAddPaymentDetailModal();
+    await loadPaymentDetails(currentParticipantId);
+  } catch (error) {
+    console.error('Error saving payment detail:', error);
+    alert('Failed to save payment detail');
+  }
+}
+
+// Delete payment detail - NEW
+async function deletePaymentDetail(detailId) {
+  if (!confirm('Delete this payment detail?')) return;
+  
+  try {
+    const response = await fetch(`${API_BASE}/api/payment-details/${detailId}`, {
+      method: 'DELETE'
+    });
+    
+    if (!response.ok) throw new Error('Failed to delete payment detail');
+    
+    await loadPaymentDetails(currentParticipantId);
+  } catch (error) {
+    console.error('Error deleting payment detail:', error);
+    alert('Failed to delete payment detail');
+  }
+}
+
 // Close breakdown modal
 function closeBreakdownModal() {
   document.getElementById('breakdown-modal').style.display = 'none';
+  currentParticipantId = null;
 }
 
-// NEW: Render receipts - show ALL receipts (scanned and manual) with payer names
+// Render receipts
 function renderReceipts() {
   if (!billData.receipts || billData.receipts.length === 0) {
     return; // Keep card hidden
@@ -250,7 +525,6 @@ function renderReceipts() {
   
   card.style.display = 'block';
   
-  // NEW: Show ALL receipts, not just those with images
   gallery.innerHTML = billData.receipts.map((receipt, index) => {
     const imagePath = receipt.image_path ? `${API_BASE}/${receipt.image_path}` : null;
     const items = receipt.items || [];
@@ -276,7 +550,7 @@ function renderReceipts() {
           </div>
           <div class="text-center text-sm mt-1">
             <strong>Receipt ${index + 1}</strong> 📸<br>
-            ${billData.currency_symbol}${total.toFixed(2)}<br>
+            ${window.SplitBillUtils.formatPrice(total, billData.currency_symbol)}<br>
             <span style="color: var(--color-text-secondary);">Paid by <strong>${payerName}</strong></span>
           </div>
         </div>
@@ -294,7 +568,7 @@ function renderReceipts() {
             </div>
           </div>
           <div class="text-center text-sm mt-1">
-            ${billData.currency_symbol}${total.toFixed(2)}<br>
+            ${window.SplitBillUtils.formatPrice(total, billData.currency_symbol)}<br>
             <span style="color: var(--color-text-secondary);">Paid by <strong>${payerName}</strong></span>
           </div>
         </div>
@@ -309,14 +583,13 @@ function showReceiptImage(imagePath, receiptNumber, payerName) {
   document.getElementById('receipt-modal-payer').textContent = `Paid by ${payerName}`;
   document.getElementById('receipt-modal-image').src = imagePath;
   
-  // NEW: Improved download - create a hidden link and trigger click
   const downloadBtn = document.getElementById('receipt-download-btn');
   downloadBtn.onclick = () => downloadReceiptImage(imagePath, receiptNumber);
   
   document.getElementById('receipt-modal').style.display = 'block';
 }
 
-// NEW: Show receipt details (for manual items)
+// Show receipt details (for manual items)
 function showReceiptDetails(receiptIndex) {
   const receipt = billData.receipts[receiptIndex];
   const items = receipt.items || [];
@@ -334,18 +607,22 @@ function showReceiptDetails(receiptIndex) {
   document.getElementById('receipt-details-modal-payer').textContent = `Paid by ${payerName}`;
   
   const itemsList = document.getElementById('receipt-details-items-list');
-  itemsList.innerHTML = items.map(item => `
-    <div class="flex-between" style="padding: 8px 0; border-bottom: 1px solid var(--color-border);">
-      <div>
-        <strong>${item.name}</strong>
-        ${item.is_tax_or_charge ? '<span class="badge" style="margin-left: 8px;">Tax/Charge</span>' : ''}
+  itemsList.innerHTML = items.map(item => {
+    const itemDisplay = window.SplitBillUtils.formatItemDisplayHTML(item, billData.currency_symbol);
+    
+    return `
+      <div class="flex-between" style="padding: 8px 0; border-bottom: 1px solid var(--color-border);">
+        <div>
+          ${itemDisplay}
+          ${item.is_tax_or_charge ? '<span class="badge" style="margin-left: 8px;">Tax/Charge</span>' : ''}
+        </div>
+        <div>${window.SplitBillUtils.formatPrice(item.price, billData.currency_symbol)}</div>
       </div>
-      <div>${billData.currency_symbol}${item.price.toFixed(2)}</div>
-    </div>
-  `).join('');
+    `;
+  }).join('');
   
   const total = items.reduce((sum, item) => sum + item.price, 0);
-  document.getElementById('receipt-details-total').textContent = `${billData.currency_symbol}${total.toFixed(2)}`;
+  document.getElementById('receipt-details-total').textContent = window.SplitBillUtils.formatPrice(total, billData.currency_symbol);
   
   document.getElementById('receipt-details-modal').style.display = 'block';
 }
@@ -355,34 +632,26 @@ function closeReceiptDetailsModal() {
   document.getElementById('receipt-details-modal').style.display = 'none';
 }
 
-// NEW: Improved download function using fetch and blob
+// Download receipt image
 async function downloadReceiptImage(imagePath, receiptNumber) {
   try {
-    // Fetch the image as a blob
     const response = await fetch(imagePath);
     if (!response.ok) throw new Error('Failed to fetch image');
     
     const blob = await response.blob();
-    
-    // Create a temporary URL for the blob
     const blobUrl = window.URL.createObjectURL(blob);
     
-    // Create a temporary anchor element
     const link = document.createElement('a');
     link.href = blobUrl;
     link.download = `receipt-${receiptNumber}.jpg`;
     
-    // Append to body, click, and remove
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     
-    // Clean up the blob URL
     window.URL.revokeObjectURL(blobUrl);
   } catch (error) {
     console.error('Download failed:', error);
-    
-    // Fallback: open in new tab
     window.open(imagePath, '_blank');
   }
 }
@@ -411,35 +680,13 @@ function shareLink() {
 }
 
 // Copy to clipboard
-function copyToClipboard(text) {
-  if (navigator.clipboard) {
-    navigator.clipboard.writeText(text).then(() => {
-      alert('Link copied to clipboard!');
-    }).catch(err => {
-      fallbackCopy(text);
-    });
-  } else {
-    fallbackCopy(text);
-  }
-}
-
-// Fallback copy method
-function fallbackCopy(text) {
-  const textarea = document.createElement('textarea');
-  textarea.value = text;
-  textarea.style.position = 'fixed';
-  textarea.style.opacity = '0';
-  document.body.appendChild(textarea);
-  textarea.select();
-  
-  try {
-    document.execCommand('copy');
+async function copyToClipboard(text) {
+  const success = await window.SplitBillUtils.copyToClipboard(text);
+  if (success) {
     alert('Link copied to clipboard!');
-  } catch (err) {
+  } else {
     prompt('Copy this link:', text);
   }
-  
-  document.body.removeChild(textarea);
 }
 
 // Duplicate bill
@@ -474,13 +721,6 @@ document.addEventListener('click', (e) => {
     closeBreakdownModal();
     closeReceiptModal();
     closeReceiptDetailsModal();
+    closeAddPaymentDetailModal();
   }
 });
-
-// Add styles for balance colors
-const style = document.createElement('style');
-style.textContent = `
-  .text-success { color: #2e7d32; }
-  .text-danger { color: #d32f2f; }
-`;
-document.head.appendChild(style);
