@@ -78,7 +78,7 @@ router.post('/process', async (req, res) => {
   }
 });
 
-// ENHANCED PARSER - Better multi-line detection and validation
+// ENHANCED PARSER - Fixed issues with @0.00 items, headers, and price parsing
 function parseReceiptFromVision(text) {
   console.log('=== RAW TEXT FROM GOOGLE VISION ===');
   console.log(text);
@@ -101,9 +101,9 @@ function parseReceiptFromVision(text) {
   // Multi-line format patterns
   const itemLinePattern = /^(\d+)\s+(.+)/; // "5 Mineral Water..."
   const unitPricePattern = /^@\s*(\d{1,3}(?:[,\.]\d{3})*(?:[,\.]\d{2})?)/; // "@35,000.00"
-  const qtyPattern = /^(\d+)\s*x/i; // "5x" or "5 x"
+  const zeroUnitPricePattern = /^@\s*0(?:\.00?)?$/; // "@0.00" or "@0"
   
-  // Skip patterns - expanded
+  // ENHANCED SKIP PATTERNS - Much more comprehensive
   const skipPatterns = [
     /^(date|time|table|outlet|store|cashier|number|dine\s*in|idr|receipt|bill|nota|struk)\b/i,
     /^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}/, // Dates
@@ -124,7 +124,13 @@ function parseReceiptFromVision(text) {
     /^note:/i,
     /^customer/i,
     /^server/i,
-    /^order/i
+    /^order/i,
+    /^(nama|alamat|nomer|telpon|meja|invoice|pesan|pegawai|jam|tamu|qty|harga|barang|tunai|kembalian|embalian)[\s:]/i, // Indonesian headers
+    /^to\d+/i, // Transaction codes
+    /^panora$/i,
+    /^omo$/i,
+    /percent|%\s*$/, // Lines ending with percentage
+    /^pb\s*\d+/i, // PB1, etc.
   ];
 
   console.log(`Processing ${lines.length} lines...`);
@@ -160,7 +166,7 @@ function parseReceiptFromVision(text) {
       const amountMatch = amountLine.match(pricePattern);
       if (amountMatch) {
         const amount = parsePrice(amountMatch[1]);
-        if (amount > 0 && amount < 10000000) {
+        if (amount > 0 && amount < 100000000) {
           subtotal = amount;
           console.log(`Found SUBTOTAL amount: ${subtotal} at line ${j}`);
           break;
@@ -176,7 +182,7 @@ function parseReceiptFromVision(text) {
       const amountMatch = amountLine.match(pricePattern);
       if (amountMatch) {
         const amount = parsePrice(amountMatch[1]);
-        if (amount > 0 && amount < 10000000) {
+        if (amount > 0 && amount < 100000000) {
           possibleTotals.push({ amount, line: j });
         }
       }
@@ -243,7 +249,14 @@ function parseReceiptFromVision(text) {
       continue;
     }
 
-    // NEW: Handle format where item name is on one line, qty+price on next
+    // NEW: Skip lines that look like headers (contain colons but no prices)
+    if (/:/.test(line) && !pricePattern.test(line)) {
+      console.log(`Skipped (header with colon): ${line}`);
+      i++;
+      continue;
+    }
+
+    // Handle format where item name is on one line, qty+price on next
     // Format: "Ayam Geprek" followed by "1 Rp15.000"
     if (i + 1 < lines.length && !/\d/.test(line)) {
       const nextLine = lines[i + 1].trim();
@@ -255,8 +268,8 @@ function parseReceiptFromVision(text) {
         const unitPrice = parsePrice(qtyPriceMatch[2]);
         const lineTotal = quantity * unitPrice;
         
-        // Validate item name
-        if (itemName.length >= 3 && /[a-zA-Z]/.test(itemName)) {
+        // Validate item name and price
+        if (itemName.length >= 3 && /[a-zA-Z]/.test(itemName) && lineTotal > 0) {
           // Check for duplicates
           const isDuplicate = items.some(item => 
             item.name.toLowerCase() === itemName.toLowerCase() && 
@@ -278,7 +291,7 @@ function parseReceiptFromVision(text) {
       }
     }
 
-    // ENHANCED MULTI-LINE FORMAT DETECTION
+    // ENHANCED MULTI-LINE FORMAT DETECTION WITH @0.00 HANDLING
     const itemMatch = line.match(itemLinePattern);
     const hasNextLine = i + 1 < lines.length;
     const hasLineAfterNext = i + 2 < lines.length;
@@ -290,6 +303,23 @@ function parseReceiptFromVision(text) {
       // Check if next line is unit price line
       const unitPriceMatch = nextLine.match(unitPricePattern) || 
                              nextLine.match(/^(\d+)\s*x?\s*@\s*(\d{1,3}(?:[,\.]\d{3})*(?:[,\.]\d{2})?)/i);
+      
+      // NEW: Check if next line is @0.00 (condiments/free items)
+      const isZeroPrice = zeroUnitPricePattern.test(nextLine);
+      
+      if (isZeroPrice) {
+        // Skip @0.00 line
+        console.log(`Skipped (unit price @0.00): ${nextLine}`);
+        
+        // Check if line after next is 0.00 (total)
+        if (/^0(?:\.00?)?$/.test(lineAfterNext)) {
+          console.log(`Skipped (zero total): ${lineAfterNext}`);
+          i += 3; // Skip all three lines
+          continue;
+        }
+        i += 2; // Skip item name and @0.00 line
+        continue;
+      }
       
       if (unitPriceMatch) {
         // Check if line after next is total
@@ -369,8 +399,8 @@ function parseReceiptFromVision(text) {
       const lastPrice = priceMatches[priceMatches.length - 1][1];
       const price = parsePrice(lastPrice);
 
-      // Validate price
-      if (price > 0 && price < 10000000) {
+      // Validate price - must be > 0
+      if (price > 0 && price < 100000000) {
         // Extract item name
         let name = line;
         priceMatches.forEach(m => {
@@ -383,6 +413,22 @@ function parseReceiptFromVision(text) {
           .replace(/[@#\+\*]/g, '')
           .replace(/\s+/g, ' ')
           .trim();
+
+        // NEW: Additional validation - name should not contain common non-item keywords
+        const invalidNamePatterns = [
+          /^(rp|idr)$/i,
+          /^qty$/i,
+          /^(pb|ppn|vat)\s*\d+/i,
+          /percent|%/i,
+          /^avg/i,
+          /pajak/i
+        ];
+        
+        if (invalidNamePatterns.some(p => p.test(name))) {
+          console.log(`Skipped (invalid name pattern): "${name}"`);
+          i++;
+          continue;
+        }
 
         // Validate name
         if (name.length >= 3 && /[a-zA-Z]/.test(name)) {
@@ -420,7 +466,7 @@ function parseReceiptFromVision(text) {
   };
 }
 
-// Enhanced price parser
+// FIXED PRICE PARSER - Better handling of Indonesian format and doesn't divide by 100
 function parsePrice(priceStr) {
   // Remove currency symbols and extra spaces
   let cleaned = priceStr.replace(/[^\d,\.]/g, '').trim();
@@ -480,10 +526,8 @@ function parsePrice(priceStr) {
   
   const parsed = parseFloat(cleaned);
   
-  // If parsed value is very large and has no decimal, divide by 100
-  if (parsed > 10000 && !cleaned.includes('.')) {
-    return parsed / 100;
-  }
+  // REMOVED: Don't divide by 100 for large numbers without decimals
+  // This was causing Rp15.000 to become 150 instead of 15000
   
   return isNaN(parsed) ? 0 : parsed;
 }
