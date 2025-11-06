@@ -243,6 +243,41 @@ function parseReceiptFromVision(text) {
       continue;
     }
 
+    // NEW: Handle format where item name is on one line, qty+price on next
+    // Format: "Ayam Geprek" followed by "1 Rp15.000"
+    if (i + 1 < lines.length && !/\d/.test(line)) {
+      const nextLine = lines[i + 1].trim();
+      const qtyPriceMatch = nextLine.match(/^(\d+)\s+(?:Rp|IDR)?\s*(\d{1,3}(?:[,\.]\d{3})*(?:[,\.]\d{2})?)/i);
+      
+      if (qtyPriceMatch) {
+        const itemName = line.trim();
+        const quantity = parseInt(qtyPriceMatch[1]);
+        const unitPrice = parsePrice(qtyPriceMatch[2]);
+        const lineTotal = quantity * unitPrice;
+        
+        // Validate item name
+        if (itemName.length >= 3 && /[a-zA-Z]/.test(itemName)) {
+          // Check for duplicates
+          const isDuplicate = items.some(item => 
+            item.name.toLowerCase() === itemName.toLowerCase() && 
+            Math.abs(item.price - lineTotal) < 0.01
+          );
+          
+          if (!isDuplicate) {
+            items.push({
+              name: itemName,
+              price: lineTotal,
+              quantity: quantity,
+              unitPrice: unitPrice
+            });
+            console.log(`✅ Item (name+qty): ${quantity} ${itemName} @ ${unitPrice} = ${lineTotal}`);
+            i += 2; // Skip both lines
+            continue;
+          }
+        }
+      }
+    }
+
     // ENHANCED MULTI-LINE FORMAT DETECTION
     const itemMatch = line.match(itemLinePattern);
     const hasNextLine = i + 1 < lines.length;
