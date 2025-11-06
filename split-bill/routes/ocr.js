@@ -2,22 +2,36 @@ const express = require('express');
 const router = express.Router();
 
 let visionClient = null;
+let visionAvailable = false;
 
-// Initialize Google Cloud Vision client
+// Try to initialize Google Cloud Vision client (don't crash if it fails)
 try {
   const vision = require('@google-cloud/vision');
-  visionClient = new vision.ImageAnnotatorClient();
-  console.log('✅ Google Cloud Vision initialized');
+  
+  // Check if credentials file exists before initializing
+  const fs = require('fs');
+  const path = require('path');
+  const credPath = path.join(__dirname, '../google-vision-key.json');
+  
+  if (fs.existsSync(credPath)) {
+    visionClient = new vision.ImageAnnotatorClient();
+    visionAvailable = true;
+    console.log('✅ Google Cloud Vision initialized');
+  } else {
+    console.log('⚠️  Google Vision credentials not found, will use Tesseract fallback');
+  }
 } catch (error) {
-  console.error('❌ Google Cloud Vision not available:', error.message);
+  console.log('⚠️  Google Cloud Vision not available:', error.message);
+  console.log('   OCR will fall back to Tesseract (client-side)');
 }
 
 // Process receipt with Google Cloud Vision
 router.post('/process', async (req, res) => {
-  if (!visionClient) {
+  if (!visionAvailable || !visionClient) {
     return res.status(503).json({ 
       error: 'OCR service not configured',
-      fallback: true 
+      fallback: true,
+      message: 'Google Vision not available, use client-side Tesseract'
     });
   }
 
@@ -58,7 +72,8 @@ router.post('/process', async (req, res) => {
     console.error('Google Vision error:', error);
     res.status(500).json({ 
       error: error.message,
-      fallback: true 
+      fallback: true,
+      message: 'Google Vision failed, use client-side Tesseract'
     });
   }
 });
@@ -229,10 +244,6 @@ function parseReceiptFromVision(text) {
     }
 
     // ENHANCED MULTI-LINE FORMAT DETECTION
-    // Format: Line1: "5 Item Name" or "Item Name"
-    //         Line2: "@10,000" or "1 @10,000" or "1x @10,000"
-    //         Line3: "50,000" (line total)
-    
     const itemMatch = line.match(itemLinePattern);
     const hasNextLine = i + 1 < lines.length;
     const hasLineAfterNext = i + 2 < lines.length;
@@ -312,14 +323,14 @@ function parseReceiptFromVision(text) {
         continue;
       }
       
-      // Skip if line is just a number (probably a line total we'll catch with multi-line)
+      // Skip if line is just a number
       if (/^\d{1,3}(?:[,\.]\d{3})*(?:[,\.]\d{2})?$/.test(line)) {
         console.log(`Skipped (standalone price): ${line}`);
         i++;
         continue;
       }
       
-      // Take the rightmost price (usually the line total)
+      // Take the rightmost price
       const lastPrice = priceMatches[priceMatches.length - 1][1];
       const price = parsePrice(lastPrice);
 
@@ -333,9 +344,9 @@ function parseReceiptFromVision(text) {
         
         // Clean item name
         name = name
-          .replace(/^\d+\s+/, '') // Remove leading quantity
-          .replace(/[@#\+\*]/g, '') // Remove special chars
-          .replace(/\s+/g, ' ') // Normalize spaces
+          .replace(/^\d+\s+/, '')
+          .replace(/[@#\+\*]/g, '')
+          .replace(/\s+/g, ' ')
           .trim();
 
         // Validate name
