@@ -42,9 +42,11 @@ const splitBillRouter = express.Router();
 try {
   const billsRoutes = require('./routes/bills');
   const settlementsRoutes = require('./routes/settlements');
+  const paymentDetailsRoutes = require('./routes/payment-details');
   
   splitBillRouter.use('/api/bills', billsRoutes);
   splitBillRouter.use('/api/settlements', settlementsRoutes);
+  splitBillRouter.use('/api/payment-details', paymentDetailsRoutes);
   
   // OCR routes (Google Cloud Vision)
   const ocrRoutes = require('./routes/ocr');

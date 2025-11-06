@@ -82,6 +82,16 @@ db.exec(`
     FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE
   );
 
+  CREATE TABLE IF NOT EXISTS payment_details (
+    id TEXT PRIMARY KEY,
+    participant_id TEXT NOT NULL,
+    provider_name TEXT NOT NULL,
+    account_number TEXT NOT NULL,
+    is_primary INTEGER DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    FOREIGN KEY (participant_id) REFERENCES participants(id) ON DELETE CASCADE
+  );
+
   CREATE INDEX IF NOT EXISTS idx_bills_expires ON bills(expires_at);
   CREATE INDEX IF NOT EXISTS idx_receipts_bill ON receipts(bill_id);
   CREATE INDEX IF NOT EXISTS idx_items_receipt ON items(receipt_id);
@@ -89,6 +99,7 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_item_splits_item ON item_splits(item_id);
   CREATE INDEX IF NOT EXISTS idx_payments_bill ON payments(bill_id);
   CREATE INDEX IF NOT EXISTS idx_payments_receipt ON payments(receipt_id);
+  CREATE INDEX IF NOT EXISTS idx_payment_details_participant ON payment_details(participant_id);
 `);
 
 console.log('✅ Database initialized successfully');

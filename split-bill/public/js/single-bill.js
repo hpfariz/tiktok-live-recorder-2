@@ -1,4 +1,4 @@
-// Single Bill JavaScript - UPDATED with new features
+// Single Bill JavaScript - UPDATED with fixes and improvements
 const BASE_PATH = window.location.pathname.match(/^\/[^\/]+/)?.[0] || '';
 const API_BASE = window.location.origin + BASE_PATH;
 
@@ -231,7 +231,7 @@ async function addItem() {
   }
 }
 
-// NEW: Open edit item modal
+// Open edit item modal
 function openEditItemModal(itemId) {
   currentEditItem = items.find(item => item.id === itemId);
   if (!currentEditItem) return;
@@ -241,13 +241,13 @@ function openEditItemModal(itemId) {
   document.getElementById('edit-item-modal').style.display = 'block';
 }
 
-// NEW: Close edit item modal
+// Close edit item modal
 function closeEditItemModal() {
   document.getElementById('edit-item-modal').style.display = 'none';
   currentEditItem = null;
 }
 
-// NEW: Save edited item
+// Save edited item
 async function saveEditedItem() {
   if (!currentEditItem) return;
   
@@ -306,7 +306,12 @@ async function deleteItem(itemId, index) {
   }
 }
 
-// Render items list
+// IMPROVEMENT #5: Format price helper
+function formatPrice(amount) {
+  return window.SplitBillUtils.formatPrice(amount, billData.currency_symbol);
+}
+
+// Render items list with improved formatting
 function renderItems() {
   const container = document.getElementById('items-list');
   
@@ -317,22 +322,26 @@ function renderItems() {
   
   const regularItems = items.filter(item => !item.is_tax_or_charge);
   
-  container.innerHTML = regularItems.map((item, index) => `
-    <div class="item-list-item">
-      <div class="flex-between">
-        <div>
-          <strong>${item.quantity && item.quantity > 1 && item.unit_price 
-            ? `${item.name} (${item.quantity}x${billData.currency_symbol}${item.unit_price.toFixed(2)})`
-            : item.name}</strong>
-          <div class="text-secondary text-sm">${billData.currency_symbol}${item.price.toFixed(2)}</div>
-        </div>
-        <div class="flex-gap">
-          <button onclick="openEditItemModal('${item.id}')" class="btn btn-secondary btn-sm">Edit</button>
-          <button onclick="deleteItem('${item.id}', ${index})" class="btn btn-danger btn-sm">Delete</button>
+  container.innerHTML = regularItems.map((item, index) => {
+    // IMPROVEMENT #4: Better item display
+    const displayName = window.SplitBillUtils.formatItemDisplayHTML(item, billData.currency_symbol);
+    const displayPrice = formatPrice(item.price);
+    
+    return `
+      <div class="item-list-item">
+        <div class="flex-between">
+          <div>
+            <div>${displayName}</div>
+            <div class="text-secondary text-sm">${displayPrice}</div>
+          </div>
+          <div class="flex-gap">
+            <button onclick="openEditItemModal('${item.id}')" class="btn btn-secondary btn-sm">Edit</button>
+            <button onclick="deleteItem('${item.id}', ${index})" class="btn btn-danger btn-sm">Delete</button>
+          </div>
         </div>
       </div>
-    </div>
-  `).join('');
+    `;
+  }).join('');
 }
 
 // Setup participant input
@@ -380,10 +389,30 @@ async function addParticipant() {
   }
 }
 
-// Remove participant
-function removeParticipant(index) {
-  participants.splice(index, 1);
-  renderParticipants();
+// FIX #1: Remove participant with API call
+async function removeParticipant(index) {
+  const participant = participants[index];
+  
+  if (!confirm(`Remove ${participant.name}? This will also remove any payment details.`)) return;
+  
+  try {
+    const response = await fetch(`${API_BASE}/api/bills/participant/${participant.id}`, {
+      method: 'DELETE'
+    });
+    
+    if (!response.ok) {
+      const error = await response.json();
+      alert(error.message || 'Failed to delete participant');
+      return;
+    }
+    
+    // Remove from local array
+    participants.splice(index, 1);
+    renderParticipants();
+  } catch (error) {
+    console.error('Error removing participant:', error);
+    alert('Failed to remove participant');
+  }
 }
 
 // Render participants
@@ -490,7 +519,7 @@ async function saveSplit() {
   if (!currentSplitItem) return;
   
   try {
-    // STEP 1: Delete existing splits for this item
+    // Delete existing splits first
     const deleteResponse = await fetch(`${API_BASE}/api/bills/item/${currentSplitItem.id}/splits`, {
       method: 'DELETE'
     });
@@ -499,16 +528,15 @@ async function saveSplit() {
       console.warn('Could not delete existing splits, continuing anyway');
     }
     
-    // Clear client-side array
     currentSplitItem.splits = [];
     
-    // STEP 2: Add new splits
+    // Add new splits
     for (const p of participants) {
       const checkbox = document.getElementById(`split-p-${p.id}`);
       
       if (checkbox && checkbox.checked) {
         const type = document.getElementById(`split-type-${p.id}`).value;
-        let value = 1; // default for equal
+        let value = 1;
         
         if (type !== 'equal') {
           value = parseFloat(document.getElementById(`split-value-${p.id}`).value) || 0;
@@ -564,7 +592,7 @@ function closeSplitModal() {
   currentSplitItem = null;
 }
 
-// NEW: Get formatted names for splits display
+// Get formatted names for splits display
 function getFormattedSplitNames(splits) {
   if (!splits || splits.length === 0) return 'Not assigned yet';
   
@@ -580,7 +608,7 @@ function getFormattedSplitNames(splits) {
   }
 }
 
-// Render split items
+// Render split items with improved formatting
 function renderSplitItems() {
   const container = document.getElementById('split-items-list');
   const regularItems = items.filter(item => !item.is_tax_or_charge);
@@ -594,16 +622,16 @@ function renderSplitItems() {
     const splitCount = (item.splits || []).length;
     const splitText = getFormattedSplitNames(item.splits);
     
-    const qtyText = (item.quantity && item.quantity > 1 && item.unit_price) 
-      ? ` (${item.quantity}x ${billData.currency_symbol}${item.unit_price.toFixed(2)})` 
-      : '';
+    // IMPROVEMENT #4: Better item display
+    const displayName = window.SplitBillUtils.formatItemDisplayHTML(item, billData.currency_symbol);
+    const displayPrice = formatPrice(item.price);
 
     return `
       <div class="item-list-item">
         <div class="flex-between">
           <div>
-            <strong>${item.name}${qtyText}</strong>
-            <div class="text-secondary text-sm">${billData.currency_symbol}${item.price.toFixed(2)}</div>
+            <div>${displayName}</div>
+            <div class="text-secondary text-sm">${displayPrice}</div>
             <div class="text-sm mt-1">${splitText}</div>
           </div>
           <button onclick="openSplitModal('${item.id}')" class="btn btn-primary btn-sm">
@@ -656,20 +684,18 @@ async function saveTaxDistribution() {
     // Create splits for all participants based on distribution type
     if (type === 'equal' || type === 'proportional') {
       // For equal and proportional, add all participants
-      // The backend will calculate the amounts correctly
       for (const participant of participants) {
         await fetch(`${API_BASE}/api/bills/item/${currentTaxItem.id}/split`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             participant_id: participant.id,
-            split_type: 'equal', // Equal split for tax, backend handles distribution
+            split_type: 'equal',
             value: 1
           })
         });
       }
     }
-    // For 'none' type, don't create any splits
     
     currentTaxItem.tax_distribution = type;
     closeTaxModal();
@@ -680,12 +706,12 @@ async function saveTaxDistribution() {
   }
 }
 
-// NEW: Show add manual tax modal
+// Show add manual tax modal
 function showAddManualTaxModal() {
   document.getElementById('add-manual-tax-modal').style.display = 'block';
 }
 
-// NEW: Close add manual tax modal
+// Close add manual tax modal
 function closeAddManualTaxModal() {
   document.getElementById('add-manual-tax-modal').style.display = 'none';
   document.getElementById('manual-tax-type').value = 'percentage';
@@ -694,7 +720,7 @@ function closeAddManualTaxModal() {
   updateManualTaxInput();
 }
 
-// NEW: Update manual tax input based on type
+// Update manual tax input based on type
 function updateManualTaxInput() {
   const type = document.getElementById('manual-tax-type').value;
   const valueInput = document.getElementById('manual-tax-value');
@@ -709,7 +735,7 @@ function updateManualTaxInput() {
   }
 }
 
-// NEW: Save manual tax
+// Save manual tax
 async function saveManualTax() {
   const type = document.getElementById('manual-tax-type').value;
   const value = parseFloat(document.getElementById('manual-tax-value').value);
@@ -724,7 +750,7 @@ async function saveManualTax() {
     let taxAmount;
     
     if (type === 'percentage') {
-      // Calculate tax based on subtotal (all non-tax items)
+      // Calculate tax based on subtotal
       const subtotal = items
         .filter(item => !item.is_tax_or_charge)
         .reduce((sum, item) => sum + item.price, 0);
@@ -735,7 +761,6 @@ async function saveManualTax() {
         name = `Tax (${value}%)`;
       }
     } else {
-      // Exact amount
       taxAmount = value;
       
       if (!name) {
@@ -743,7 +768,6 @@ async function saveManualTax() {
       }
     }
     
-    // Add tax item
     await addItemToServer(name, taxAmount, true, 'tax');
     
     closeAddManualTaxModal();
@@ -754,12 +778,12 @@ async function saveManualTax() {
   }
 }
 
-// NEW: Show add manual service charge modal
+// Show add manual service charge modal
 function showAddManualServiceModal() {
   document.getElementById('add-manual-service-modal').style.display = 'block';
 }
 
-// NEW: Close add manual service charge modal
+// Close add manual service charge modal
 function closeAddManualServiceModal() {
   document.getElementById('add-manual-service-modal').style.display = 'none';
   document.getElementById('manual-service-type').value = 'percentage';
@@ -768,7 +792,7 @@ function closeAddManualServiceModal() {
   updateManualServiceInput();
 }
 
-// NEW: Update manual service input based on type
+// Update manual service input based on type
 function updateManualServiceInput() {
   const type = document.getElementById('manual-service-type').value;
   const valueInput = document.getElementById('manual-service-value');
@@ -783,7 +807,7 @@ function updateManualServiceInput() {
   }
 }
 
-// NEW: Save manual service charge
+// Save manual service charge
 async function saveManualService() {
   const type = document.getElementById('manual-service-type').value;
   const value = parseFloat(document.getElementById('manual-service-value').value);
@@ -798,7 +822,6 @@ async function saveManualService() {
     let serviceAmount;
     
     if (type === 'percentage') {
-      // Calculate service charge based on subtotal (all non-tax items)
       const subtotal = items
         .filter(item => !item.is_tax_or_charge)
         .reduce((sum, item) => sum + item.price, 0);
@@ -809,7 +832,6 @@ async function saveManualService() {
         name = `Service Charge (${value}%)`;
       }
     } else {
-      // Exact amount
       serviceAmount = value;
       
       if (!name) {
@@ -817,7 +839,6 @@ async function saveManualService() {
       }
     }
     
-    // Add service charge item
     await addItemToServer(name, serviceAmount, true, 'service');
     
     closeAddManualServiceModal();
@@ -828,7 +849,7 @@ async function saveManualService() {
   }
 }
 
-// Render tax charges
+// Render tax charges with improved formatting
 function renderTaxCharges() {
   const container = document.getElementById('tax-charges-list');
   const taxChargeItems = items.filter(item => item.is_tax_or_charge);
@@ -854,7 +875,7 @@ function renderTaxCharges() {
         <div class="flex-between">
           <div>
             <strong>${item.name}</strong>
-            <div class="text-secondary text-sm">${billData.currency_symbol}${item.price.toFixed(2)}</div>
+            <div class="text-secondary text-sm">${formatPrice(item.price)}</div>
             <div class="text-sm mt-1">${distText}</div>
           </div>
           <div class="flex-gap">
@@ -943,7 +964,6 @@ function goToStep(step) {
   if (step === 5) renderTaxCharges();
   if (step === 6) {
     populatePayerSelect();
-    // Calculate total
     const total = items.reduce((sum, item) => sum + item.price, 0);
     document.getElementById('payment-amount').value = total.toFixed(2);
   }

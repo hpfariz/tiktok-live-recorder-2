@@ -311,6 +311,45 @@ router.post('/:id/participant', (req, res) => {
   }
 });
 
+// DELETE PARTICIPANT - NEW ENDPOINT TO FIX ISSUE #1
+router.delete('/participant/:participantId', (req, res) => {
+  const { participantId } = req.params;
+  
+  try {
+    // Check if participant has any splits assigned
+    const splitsCount = db.prepare(`
+      SELECT COUNT(*) as count FROM item_splits WHERE participant_id = ?
+    `).get(participantId).count;
+    
+    if (splitsCount > 0) {
+      return res.status(400).json({ 
+        error: 'Cannot delete participant with assigned items',
+        message: 'This participant has items assigned. Please remove all item assignments first.'
+      });
+    }
+    
+    // Check if participant has any payments
+    const paymentsCount = db.prepare(`
+      SELECT COUNT(*) as count FROM payments WHERE payer_id = ?
+    `).get(participantId).count;
+    
+    if (paymentsCount > 0) {
+      return res.status(400).json({ 
+        error: 'Cannot delete participant with payments',
+        message: 'This participant has payments recorded. Please remove payments first.'
+      });
+    }
+    
+    // Delete participant (will cascade to payment_details)
+    db.prepare('DELETE FROM participants WHERE id = ?').run(participantId);
+    
+    res.json({ success: true, message: 'Participant deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting participant:', error);
+    res.status(500).json({ error: 'Failed to delete participant' });
+  }
+});
+
 // Add item split
 router.post('/item/:itemId/split', (req, res) => {
   const { itemId } = req.params;

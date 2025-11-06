@@ -2,6 +2,18 @@ const express = require('express');
 const router = express.Router();
 const db = require('../database/db');
 
+// Helper function to format price with thousand separators
+function formatPrice(amount, currency = 'Rp') {
+  if (amount === null || amount === undefined || isNaN(amount)) {
+    return `${currency}0.00`;
+  }
+  
+  const parts = amount.toFixed(2).split('.');
+  parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  
+  return `${currency}${parts.join('.')}`;
+}
+
 // Calculate settlements for a bill
 router.get('/:billId', (req, res) => {
   const { billId } = req.params;
@@ -467,7 +479,9 @@ router.get('/:billId/participant/:participantId', (req, res) => {
             item_price: Math.round(item.item_price * 100) / 100,
             split_type: 'proportional',
             split_value: null,
-            amount: Math.round(amount * 100) / 100
+            amount: Math.round(amount * 100) / 100,
+            quantity: item.quantity || 1,
+            unit_price: item.unit_price
           });
           
           processedReceipts.add(item.receipt_id);
@@ -503,7 +517,9 @@ router.get('/:billId/participant/:participantId', (req, res) => {
         item_price: Math.round(item.item_price * 100) / 100,
         split_type: item.split_type,
         split_value: item.split_value,
-        amount: Math.round(amount * 100) / 100
+        amount: Math.round(amount * 100) / 100,
+        quantity: item.quantity || 1,
+        unit_price: item.unit_price
       });
       
       processedReceipts.add(item.receipt_id);
@@ -525,7 +541,7 @@ router.get('/:billId/participant/:participantId', (req, res) => {
           
           // Get unconfigured tax items from this receipt
           const taxItems = db.prepare(`
-            SELECT i.id, i.name, i.price, i.is_tax_or_charge
+            SELECT i.id, i.name, i.price, i.is_tax_or_charge, i.quantity, i.unit_price
             FROM items i
             LEFT JOIN tax_distribution t ON i.id = t.item_id
             LEFT JOIN item_splits s ON i.id = s.item_id
@@ -546,7 +562,9 @@ router.get('/:billId/participant/:participantId', (req, res) => {
                 item_price: Math.round(taxItem.price * 100) / 100,
                 split_type: 'proportional',
                 split_value: null,
-                amount: Math.round(amount * 100) / 100
+                amount: Math.round(amount * 100) / 100,
+                quantity: taxItem.quantity || 1,
+                unit_price: taxItem.unit_price
               });
             }
           }
@@ -563,6 +581,84 @@ router.get('/:billId/participant/:participantId', (req, res) => {
   } catch (error) {
     console.error('Error getting participant breakdown:', error);
     res.status(500).json({ error: 'Failed to get breakdown' });
+  }
+});
+
+// NEW: Get breakdown by receipt showing all items and who they're assigned to
+router.get('/:billId/receipt/:receiptId', (req, res) => {
+  const { billId, receiptId } = req.params;
+  
+  try {
+    const bill = db.prepare('SELECT * FROM bills WHERE id = ?').get(billId);
+    const receipt = db.prepare('SELECT * FROM receipts WHERE id = ? AND bill_id = ?').get(receiptId, billId);
+    
+    if (!receipt) {
+      return res.status(404).json({ error: 'Receipt not found' });
+    }
+    
+    // Get payer for this receipt
+    const payment = db.prepare(`
+      SELECT p.*, pt.name as payer_name
+      FROM payments p
+      JOIN participants pt ON p.payer_id = pt.id
+      WHERE p.receipt_id = ?
+    `).get(receiptId);
+    
+    // Get all items in this receipt
+    const items = db.prepare('SELECT * FROM items WHERE receipt_id = ? ORDER BY item_order').all(receiptId);
+    
+    const itemsWithAssignments = [];
+    let receiptTotal = 0;
+    
+    for (const item of items) {
+      receiptTotal += item.price;
+      
+      // Get splits for this item
+      const splits = db.prepare(`
+        SELECT s.*, p.name as participant_name
+        FROM item_splits s
+        JOIN participants p ON s.participant_id = p.id
+        WHERE s.item_id = ?
+      `).all(item.id);
+      
+      // Format assignees
+      const assignees = splits.map(s => ({
+        id: s.participant_id,
+        name: s.participant_name,
+        split_type: s.split_type,
+        value: s.value
+      }));
+      
+      itemsWithAssignments.push({
+        id: item.id,
+        name: item.name,
+        price: item.price,
+        quantity: item.quantity || 1,
+        unit_price: item.unit_price,
+        is_tax_or_charge: item.is_tax_or_charge,
+        charge_type: item.charge_type,
+        assignees: assignees,
+        tax_distribution: item.is_tax_or_charge ? 
+          db.prepare('SELECT * FROM tax_distribution WHERE item_id = ?').get(item.id) : null
+      });
+    }
+    
+    res.json({
+      receipt_id: receiptId,
+      bill_id: billId,
+      currency_symbol: bill.currency_symbol,
+      image_path: receipt.image_path,
+      payer: payment ? {
+        id: payment.payer_id,
+        name: payment.payer_name,
+        amount: payment.amount
+      } : null,
+      items: itemsWithAssignments,
+      total: Math.round(receiptTotal * 100) / 100
+    });
+  } catch (error) {
+    console.error('Error getting receipt breakdown:', error);
+    res.status(500).json({ error: 'Failed to get receipt breakdown' });
   }
 });
 
