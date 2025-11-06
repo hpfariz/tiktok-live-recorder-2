@@ -78,7 +78,7 @@ router.post('/process', async (req, res) => {
   }
 });
 
-// ENHANCED PARSER - Fixed issues with @0.00 items, headers, and price parsing
+// ENHANCED PARSER - Better subtotal/tax/total extraction
 function parseReceiptFromVision(text) {
   console.log('=== RAW TEXT FROM GOOGLE VISION ===');
   console.log(text);
@@ -93,21 +93,21 @@ function parseReceiptFromVision(text) {
 
   // Enhanced patterns
   const pricePattern = /(\d{1,3}(?:[,\.]\d{3})*(?:[,\.]\d{2})?)/;
-  const totalPattern = /\b(total|grand\s*total|amount|jumlah)\b/i;
-  const taxPattern = /\b(pb1|ppn|tax|pajak|vat)\b/i;
-  const servicePattern = /\b(service|srv|layanan|charge)\b/i;
-  const subtotalPattern = /\b(subtotal|sub\s*total)\b/i;
+  const totalPattern = /\b(total|grand\s*total|amount|jumlah)\s*:/i;
+  const taxPattern = /\b(pb1|ppn|tax|pajak|vat)\s*:/i;
+  const servicePattern = /\b(service|srv|layanan|charge)\s*:/i;
+  const subtotalPattern = /\b(subtotal|sub\s*total)\s*:/i;
   
   // Multi-line format patterns
-  const itemLinePattern = /^(\d+)\s+(.+)/; // "5 Mineral Water..."
-  const unitPricePattern = /^@\s*(\d{1,3}(?:[,\.]\d{3})*(?:[,\.]\d{2})?)/; // "@35,000.00"
-  const zeroUnitPricePattern = /^@\s*0(?:\.00?)?$/; // "@0.00" or "@0"
+  const itemLinePattern = /^(\d+)\s+(.+)/;
+  const unitPricePattern = /^@\s*(\d{1,3}(?:[,\.]\d{3})*(?:[,\.]\d{2})?)/;
+  const zeroUnitPricePattern = /^@\s*0(?:\.00?)?$/;
   
-  // ENHANCED SKIP PATTERNS - Much more comprehensive
+  // ENHANCED SKIP PATTERNS - Including payment-related keywords
   const skipPatterns = [
     /^(date|time|table|outlet|store|cashier|number|dine\s*in|idr|receipt|bill|nota|struk)\b/i,
-    /^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}/, // Dates
-    /^\d{1,2}:\d{2}/, // Times
+    /^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}/,
+    /^\d{1,2}:\d{2}/,
     /^pc\d+/i,
     /^avg\s*per\s*pax/i,
     /temporary/i,
@@ -125,17 +125,18 @@ function parseReceiptFromVision(text) {
     /^customer/i,
     /^server/i,
     /^order/i,
-    /^(nama|alamat|nomer|telpon|meja|invoice|pesan|pegawai|jam|tamu|qty|harga|barang|tunai|kembalian|embalian)[\s:]/i, // Indonesian headers
-    /^to\d+/i, // Transaction codes
+    /^(nama|alamat|nomer|telpon|meja|invoice|pesan|pegawai|jam|tamu|qty|harga|barang)[\s:]/i,
+    /^to\d+/i,
     /^panora$/i,
     /^omo$/i,
-    /percent|%\s*$/, // Lines ending with percentage
-    /^pb\s*\d+/i, // PB1, etc.
+    /percent|%\s*$/,
+    /^pb\s*\d+/i,
+    /^(tunai|tunal|cash|bayar|dibayar|kembalian|embalian|kembali|change)\s*:/i, // Payment-related
   ];
 
   console.log(`Processing ${lines.length} lines...`);
 
-  // FIRST PASS: Find key amounts (subtotal, tax, total)
+  // FIRST PASS: Find key amounts with IMPROVED extraction
   let subtotalIndex = -1;
   let totalIndex = -1;
   let taxLineIndex = -1;
@@ -159,67 +160,144 @@ function parseReceiptFromVision(text) {
     }
   }
   
-  // Extract amounts by looking ahead from keywords
+  // IMPROVED: Extract subtotal - look for rightmost/largest price in the subtotal line
   if (subtotalIndex >= 0) {
-    for (let j = subtotalIndex; j < Math.min(subtotalIndex + 8, lines.length); j++) {
-      const amountLine = lines[j].trim();
-      const amountMatch = amountLine.match(pricePattern);
-      if (amountMatch) {
-        const amount = parsePrice(amountMatch[1]);
-        if (amount > 0 && amount < 100000000) {
-          subtotal = amount;
-          console.log(`Found SUBTOTAL amount: ${subtotal} at line ${j}`);
-          break;
-        }
-      }
-    }
-  }
-  
-  if (totalIndex >= 0) {
-    const possibleTotals = [];
-    for (let j = totalIndex; j < Math.min(totalIndex + 10, lines.length); j++) {
-      const amountLine = lines[j].trim();
-      const amountMatch = amountLine.match(pricePattern);
-      if (amountMatch) {
-        const amount = parsePrice(amountMatch[1]);
-        if (amount > 0 && amount < 100000000) {
-          possibleTotals.push({ amount, line: j });
-        }
-      }
-    }
-    if (possibleTotals.length > 0) {
-      possibleTotals.sort((a, b) => b.amount - a.amount);
-      total = possibleTotals[0].amount;
-      console.log(`Found TOTAL amount: ${total}`);
-    }
-  }
-  
-  // Calculate tax from difference
-  if (subtotal && total && total > subtotal) {
-    const taxAmount = total - subtotal;
-    let taxPercent = 10;
-    let taxName = 'Tax (PB1)';
+    const subtotalLine = lines[subtotalIndex].trim();
+    const allPrices = [...subtotalLine.matchAll(new RegExp(pricePattern.source, 'g'))];
     
-    if (taxLineIndex >= 0) {
-      const taxLine = lines[taxLineIndex];
-      const percentMatch = taxLine.match(/(\d+(?:\.\d+)?)\s*%/);
-      if (percentMatch) {
-        taxPercent = parseFloat(percentMatch[1]);
-      }
+    if (allPrices.length > 0) {
+      // Take the rightmost (last) price from the line
+      const lastPrice = allPrices[allPrices.length - 1][1];
+      const amount = parsePrice(lastPrice);
       
-      if (/ppn/i.test(taxLine)) {
-        taxName = `PPN ${taxPercent}%`;
-      } else if (/pb1/i.test(taxLine)) {
-        taxName = `PB1 ${taxPercent}%`;
-      } else if (/vat/i.test(taxLine)) {
-        taxName = `VAT ${taxPercent}%`;
-      } else {
-        taxName = `Tax ${taxPercent}%`;
+      if (amount > 0 && amount < 100000000) {
+        subtotal = amount;
+        console.log(`Found SUBTOTAL amount: ${subtotal} from line ${subtotalIndex}`);
       }
     }
     
+    // If still not found, look at next few lines
+    if (!subtotal) {
+      for (let j = subtotalIndex + 1; j < Math.min(subtotalIndex + 5, lines.length); j++) {
+        const amountLine = lines[j].trim();
+        const amountMatch = amountLine.match(pricePattern);
+        if (amountMatch) {
+          const amount = parsePrice(amountMatch[1]);
+          if (amount > 0 && amount < 100000000) {
+            subtotal = amount;
+            console.log(`Found SUBTOTAL amount: ${subtotal} at line ${j}`);
+            break;
+          }
+        }
+      }
+    }
+  }
+  
+  // IMPROVED: Extract tax - try to get from same line first
+  if (taxLineIndex >= 0) {
+    const taxLine = lines[taxLineIndex].trim();
+    const allPrices = [...taxLine.matchAll(new RegExp(pricePattern.source, 'g'))];
+    
+    if (allPrices.length > 0) {
+      // Take the rightmost (last) price from the line
+      const lastPrice = allPrices[allPrices.length - 1][1];
+      const amount = parsePrice(lastPrice);
+      
+      if (amount > 0 && amount < 100000000) {
+        // Extract tax name and percentage
+        let taxPercent = 10;
+        let taxName = 'Tax';
+        
+        const percentMatch = taxLine.match(/(\d+(?:\.\d+)?)\s*%/);
+        if (percentMatch) {
+          taxPercent = parseFloat(percentMatch[1]);
+        }
+        
+        if (/ppn/i.test(taxLine)) {
+          taxName = `PPN ${taxPercent}%`;
+        } else if (/pb1/i.test(taxLine)) {
+          taxName = `PB1 ${taxPercent}%`;
+        } else if (/vat/i.test(taxLine)) {
+          taxName = `VAT ${taxPercent}%`;
+        } else if (/pajak/i.test(taxLine)) {
+          taxName = `Pajak ${taxPercent}%`;
+        } else {
+          taxName = `Tax ${taxPercent}%`;
+        }
+        
+        tax = {
+          name: taxName,
+          amount: Math.round(amount * 100) / 100
+        };
+        console.log(`✅ Found TAX: ${tax.name} = ${tax.amount} from line ${taxLineIndex}`);
+      }
+    }
+    
+    // If still not found, look at next line
+    if (!tax) {
+      const nextLine = lines[taxLineIndex + 1]?.trim();
+      if (nextLine) {
+        const amountMatch = nextLine.match(pricePattern);
+        if (amountMatch) {
+          const amount = parsePrice(amountMatch[1]);
+          if (amount > 0 && amount < 100000000) {
+            tax = {
+              name: 'Tax 10%',
+              amount: Math.round(amount * 100) / 100
+            };
+            console.log(`✅ Found TAX: ${tax.name} = ${tax.amount} from next line`);
+          }
+        }
+      }
+    }
+  }
+  
+  // IMPROVED: Extract total - look at the total line and next line, but skip payment amounts
+  if (totalIndex >= 0) {
+    // First try to get from same line
+    const totalLine = lines[totalIndex].trim();
+    const allPrices = [...totalLine.matchAll(new RegExp(pricePattern.source, 'g'))];
+    
+    if (allPrices.length > 0) {
+      // Take the rightmost (last) price from the line
+      const lastPrice = allPrices[allPrices.length - 1][1];
+      const amount = parsePrice(lastPrice);
+      
+      if (amount > 0 && amount < 100000000) {
+        total = amount;
+        console.log(`Found TOTAL amount: ${total} from line ${totalIndex}`);
+      }
+    }
+    
+    // If not found on same line, look at next line (but skip if it's a payment line)
+    if (!total) {
+      for (let j = totalIndex + 1; j < Math.min(totalIndex + 3, lines.length); j++) {
+        const amountLine = lines[j].trim();
+        
+        // Skip if this looks like a payment amount line
+        if (/^(tunai|tunal|cash|bayar|dibayar|kembalian|embalian|kembali|change)/i.test(amountLine)) {
+          console.log(`Skipped payment line when looking for total: ${amountLine}`);
+          continue;
+        }
+        
+        const amountMatch = amountLine.match(pricePattern);
+        if (amountMatch) {
+          const amount = parsePrice(amountMatch[1]);
+          if (amount > 0 && amount < 100000000) {
+            total = amount;
+            console.log(`Found TOTAL amount: ${total} at line ${j}`);
+            break;
+          }
+        }
+      }
+    }
+  }
+  
+  // If we didn't find tax but have subtotal and total, calculate it
+  if (!tax && subtotal && total && total > subtotal) {
+    const taxAmount = total - subtotal;
     tax = { 
-      name: taxName, 
+      name: 'Tax 10%', 
       amount: Math.round(taxAmount * 100) / 100 
     };
     console.log(`✅ Calculated TAX: ${tax.name} = ${tax.amount}`);
@@ -242,22 +320,31 @@ function parseReceiptFromVision(text) {
       continue;
     }
 
-    // Skip subtotal/total lines
-    if (subtotalPattern.test(line) || totalPattern.test(line)) {
+    // Skip subtotal/total/tax lines
+    if (subtotalPattern.test(line) || totalPattern.test(line) || taxPattern.test(line)) {
       console.log(`Skipped (keyword): ${line}`);
       i++;
       continue;
     }
 
-    // NEW: Skip lines that look like headers (contain colons but no prices)
-    if (/:/.test(line) && !pricePattern.test(line)) {
-      console.log(`Skipped (header with colon): ${line}`);
-      i++;
-      continue;
+    // Skip lines that look like headers (contain colons but no prices, or prices that are just placeholders)
+    if (/:/.test(line)) {
+      const priceMatches = [...line.matchAll(new RegExp(pricePattern.source, 'g'))];
+      if (priceMatches.length === 0) {
+        console.log(`Skipped (header with colon, no price): ${line}`);
+        i++;
+        continue;
+      }
+      
+      // Check if this is a payment/change line
+      if (/^(tunai|tunal|cash|bayar|dibayar|kembalian|embalian|kembali|change)/i.test(line)) {
+        console.log(`Skipped (payment/change line): ${line}`);
+        i++;
+        continue;
+      }
     }
 
     // Handle format where item name is on one line, qty+price on next
-    // Format: "Ayam Geprek" followed by "1 Rp15.000"
     if (i + 1 < lines.length && !/\d/.test(line)) {
       const nextLine = lines[i + 1].trim();
       const qtyPriceMatch = nextLine.match(/^(\d+)\s+(?:Rp|IDR)?\s*(\d{1,3}(?:[,\.]\d{3})*(?:[,\.]\d{2})?)/i);
@@ -284,7 +371,7 @@ function parseReceiptFromVision(text) {
               unitPrice: unitPrice
             });
             console.log(`✅ Item (name+qty): ${quantity} ${itemName} @ ${unitPrice} = ${lineTotal}`);
-            i += 2; // Skip both lines
+            i += 2;
             continue;
           }
         }
@@ -304,20 +391,19 @@ function parseReceiptFromVision(text) {
       const unitPriceMatch = nextLine.match(unitPricePattern) || 
                              nextLine.match(/^(\d+)\s*x?\s*@\s*(\d{1,3}(?:[,\.]\d{3})*(?:[,\.]\d{2})?)/i);
       
-      // NEW: Check if next line is @0.00 (condiments/free items)
+      // Check if next line is @0.00 (condiments/free items)
       const isZeroPrice = zeroUnitPricePattern.test(nextLine);
       
       if (isZeroPrice) {
-        // Skip @0.00 line
         console.log(`Skipped (unit price @0.00): ${nextLine}`);
         
         // Check if line after next is 0.00 (total)
         if (/^0(?:\.00?)?$/.test(lineAfterNext)) {
           console.log(`Skipped (zero total): ${lineAfterNext}`);
-          i += 3; // Skip all three lines
+          i += 3;
           continue;
         }
-        i += 2; // Skip item name and @0.00 line
+        i += 2;
         continue;
       }
       
@@ -338,11 +424,9 @@ function parseReceiptFromVision(text) {
           
           // Extract unit price
           if (unitPriceMatch[2]) {
-            // Format: "1 @10,000" or "1x @10,000"
             quantity = parseInt(unitPriceMatch[1]) || quantity;
             unitPrice = parsePrice(unitPriceMatch[2]);
           } else {
-            // Format: "@10,000"
             unitPrice = parsePrice(unitPriceMatch[1]);
           }
           
@@ -369,7 +453,6 @@ function parseReceiptFromVision(text) {
               console.log(`✅ Multi-line item: ${quantity} ${itemName} @ ${unitPrice} = ${lineTotal}`);
             }
             
-            // Skip the next 2 lines
             i += 3;
             continue;
           }
@@ -381,7 +464,7 @@ function parseReceiptFromVision(text) {
     const priceMatches = [...line.matchAll(new RegExp(pricePattern.source, 'g'))];
     
     if (priceMatches.length >= 1) {
-      // Skip if line starts with @ (unit price line)
+      // Skip if line starts with @
       if (line.startsWith('@')) {
         console.log(`Skipped (unit price line): ${line}`);
         i++;
@@ -414,14 +497,15 @@ function parseReceiptFromVision(text) {
           .replace(/\s+/g, ' ')
           .trim();
 
-        // NEW: Additional validation - name should not contain common non-item keywords
+        // Additional validation - name should not contain common non-item keywords
         const invalidNamePatterns = [
           /^(rp|idr)$/i,
           /^qty$/i,
           /^(pb|ppn|vat)\s*\d+/i,
           /percent|%/i,
           /^avg/i,
-          /pajak/i
+          /pajak/i,
+          /^(tunai|tunal|cash|bayar|dibayar|kembalian|embalian|kembali|change)/i,
         ];
         
         if (invalidNamePatterns.some(p => p.test(name))) {
@@ -466,7 +550,7 @@ function parseReceiptFromVision(text) {
   };
 }
 
-// FIXED PRICE PARSER - Better handling of Indonesian format and doesn't divide by 100
+// Price parser
 function parsePrice(priceStr) {
   // Remove currency symbols and extra spaces
   let cleaned = priceStr.replace(/[^\d,\.]/g, '').trim();
@@ -525,9 +609,6 @@ function parsePrice(priceStr) {
   }
   
   const parsed = parseFloat(cleaned);
-  
-  // REMOVED: Don't divide by 100 for large numbers without decimals
-  // This was causing Rp15.000 to become 150 instead of 15000
   
   return isNaN(parsed) ? 0 : parsed;
 }
