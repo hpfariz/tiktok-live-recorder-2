@@ -86,19 +86,18 @@ function parseReceiptFromVision(text) {
 
   const pricePattern = /(\d{1,3}(?:[,\.]\d{3})*(?:[,\.]\d{2})?)/;
   
-  // IMPROVED: Patterns match with OR without colons
-  const totalPattern = /\b(total|grand\s*total|amount|jumlah)\s*:?/i;
-  const taxPattern = /\b(pb1|ppn|tax|pajak|vat)\s*(?:\([\d.]+%\))?:?/i;
+  const totalPattern = /\b(total|grand\s*total|amount\s*paid)\s*:?/i;
+  const taxPattern = /\b(pb1|ppn|tax|pajak|vat)\s*(?:\d+(?:\.\d+)?%|\(\d+(?:\.\d+)?%\))?:?/i;
   const servicePattern = /\b(service|srv|layanan|charge)\s*:?/i;
-  const subtotalPattern = /\b(subtotal|sub\s*total)\s*:?/i;
+  const subtotalPattern = /\b(sub[\s-]?total)\s*:?/i;
   
   const itemLinePattern = /^(\d+)\s+(.+)/;
   const unitPricePattern = /^@\s*(\d{1,3}(?:[,\.]\d{3})*(?:[,\.]\d{2})?)/;
   const zeroUnitPricePattern = /^@\s*0(?:\.00?)?$/;
   
-  // COMPREHENSIVE SKIP PATTERNS
+  // Comprehensive skip patterns
   const skipPatterns = [
-    /^(date|time|table|outlet|store|cashier|number|dine\s*in|idr|receipt|bill|nota|struk|bistro)\b/i,
+    /^(date|time|table|outlet|store|cashier|number|dine\s*in|idr|receipt|bill|nota|struk|bistro|counter|member|card\s*balance|amount\s*paid|card\s*no|expired|payment|rounding)\b/i,
     /^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}/,
     /^\d{1,2}:\d{2}/,
     /^pc\d+/i,
@@ -112,21 +111,15 @@ function parseReceiptFromVision(text) {
     /^r\s+serv/i,
     /^\+\s*(dingin|normal|panas|ice|hot|cold)/i,
     /^(ap|kon|ak)$/i,
-    /^terima\s*kasih/i,
-    /^thank\s*you/i,
-    /^note:/i,
-    /^customer/i,
-    /^server/i,
-    /^order/i,
+    /^(terima\s*kasih|thank\s*you|please\s*come\s*again)/i,
     /^lunas/i,
-    /^(tunai|tunal|cash|bayar|dibayar|kembalian|embalian|kembali|kembali|change)\s*:?/i,
-    /^pb\s*\d+/i,
-    // NEW: Skip common header patterns with numbers/codes
-    /^(no\.|kode|tanggal|kasir|order|struk|invoice|pesan|pegawai|jam)[\s:]/i,
+    /^(tunai|tunal|cash|bayar|dibayar|kembalian|embalian|kembali|change)\s*:?/i,
+    /^(no\.|kode|tanggal|kasir|order|struk|invoice|pesan|pegawai|jam|bill\s*no)[\s:]/i,
     /^(nama|alamat|nomer|telpon|meja|tamu|qty|harga|barang)[\s:]/i,
-    /^(jl|jalan|street|road)\b/i, // Address lines
-    /^0\d{9,}/, // Phone numbers
-    /^[a-z0-9]{10,}/i, // Long alphanumeric codes
+    /^(jl|jalan|street|road)\b/i,
+    /^0\d{9,}/,
+    /^[a-z]{1,2}\d+$/i, // C3, RK21, etc.
+    /^[a-z0-9]{10,}/i,
   ];
 
   console.log(`Processing ${lines.length} lines...`);
@@ -164,24 +157,22 @@ function parseReceiptFromVision(text) {
       const lastPrice = allPrices[allPrices.length - 1][1];
       const amount = parsePrice(lastPrice);
       
-      if (amount > 0 && amount < 100000000) {
+      if (amount > 100 && amount < 100000000) { // Must be > 100 to be a valid subtotal
         subtotal = amount;
         console.log(`Found SUBTOTAL amount: ${subtotal} from line ${subtotalIndex}`);
       }
     }
     
-    // Look at next lines if not found on same line
     if (!subtotal) {
       for (let j = subtotalIndex + 1; j < Math.min(subtotalIndex + 5, lines.length); j++) {
         const amountLine = lines[j].trim();
         
-        // Skip if it looks like a tax or total line
         if (taxPattern.test(amountLine) || totalPattern.test(amountLine)) continue;
         
         const amountMatch = amountLine.match(pricePattern);
         if (amountMatch) {
           const amount = parsePrice(amountMatch[1]);
-          if (amount > 0 && amount < 100000000) {
+          if (amount > 100 && amount < 100000000) {
             subtotal = amount;
             console.log(`Found SUBTOTAL amount: ${subtotal} at line ${j}`);
             break;
@@ -199,13 +190,11 @@ function parseReceiptFromVision(text) {
     let taxPercent = 10;
     let taxName = 'Tax';
     
-    // Extract percentage from line
     const percentMatch = taxLine.match(/(\d+(?:\.\d+)?)\s*%/);
     if (percentMatch) {
       taxPercent = parseFloat(percentMatch[1]);
     }
     
-    // Determine tax name
     if (/ppn/i.test(taxLine)) {
       taxName = `PPN ${taxPercent}%`;
     } else if (/pb1/i.test(taxLine)) {
@@ -218,20 +207,18 @@ function parseReceiptFromVision(text) {
       taxName = `Tax ${taxPercent}%`;
     }
     
-    // FIXED: Filter out prices that look like percentages
+    // Filter out percentage number and very small values
     if (allPrices.length > 0) {
-      // Filter out the percentage number itself (e.g., "10.00" from "PB1 (10.00%)")
       const validPrices = allPrices.filter(m => {
         const val = parsePrice(m[1]);
-        // If value is same as taxPercent (or very close), it's the percentage, not the tax amount
-        return Math.abs(val - taxPercent) > 0.1;
+        return Math.abs(val - taxPercent) > 0.1 && val > 1; // Must be > 1
       });
       
       if (validPrices.length > 0) {
         const lastPrice = validPrices[validPrices.length - 1][1];
         const amount = parsePrice(lastPrice);
         
-        if (amount > 0 && amount < 100000000) {
+        if (amount > 1 && amount < 100000000) {
           tax = {
             name: taxName,
             amount: Math.round(amount * 100) / 100
@@ -241,18 +228,16 @@ function parseReceiptFromVision(text) {
       }
     }
     
-    // Look at next line if not found on same line
     if (!tax) {
       for (let j = taxLineIndex + 1; j < Math.min(taxLineIndex + 3, lines.length); j++) {
         const amountLine = lines[j].trim();
         
-        // Skip if it's a total line
         if (totalPattern.test(amountLine)) continue;
         
         const amountMatch = amountLine.match(pricePattern);
         if (amountMatch) {
           const amount = parsePrice(amountMatch[1]);
-          if (amount > 0 && amount < 100000000) {
+          if (amount > 1 && amount < 100000000) {
             tax = {
               name: taxName,
               amount: Math.round(amount * 100) / 100
@@ -274,19 +259,17 @@ function parseReceiptFromVision(text) {
       const lastPrice = allPrices[allPrices.length - 1][1];
       const amount = parsePrice(lastPrice);
       
-      if (amount > 0 && amount < 100000000) {
+      if (amount > 100 && amount < 100000000) {
         total = amount;
         console.log(`Found TOTAL amount: ${total} from line ${totalIndex}`);
       }
     }
     
-    // Look at next lines if not found on same line
     if (!total) {
       for (let j = totalIndex + 1; j < Math.min(totalIndex + 3, lines.length); j++) {
         const amountLine = lines[j].trim();
         
-        // Skip payment lines
-        if (/^(tunai|tunal|cash|bayar|dibayar|kembalian|embalian|kembali|change)/i.test(amountLine)) {
+        if (/^(tunai|tunal|cash|bayar|dibayar|kembalian|embalian|kembali|change|card\s*balance)/i.test(amountLine)) {
           console.log(`Skipped payment line when looking for total: ${amountLine}`);
           continue;
         }
@@ -294,7 +277,7 @@ function parseReceiptFromVision(text) {
         const amountMatch = amountLine.match(pricePattern);
         if (amountMatch) {
           const amount = parsePrice(amountMatch[1]);
-          if (amount > 0 && amount < 100000000) {
+          if (amount > 100 && amount < 100000000) {
             total = amount;
             console.log(`Found TOTAL amount: ${total} at line ${j}`);
             break;
@@ -304,7 +287,6 @@ function parseReceiptFromVision(text) {
     }
   }
   
-  // Calculate tax if we have subtotal and total but no tax
   if (!tax && subtotal && total && total > subtotal) {
     const taxAmount = total - subtotal;
     tax = { 
@@ -315,11 +297,29 @@ function parseReceiptFromVision(text) {
   }
 
   // SECOND PASS: Parse items
+  // Mark lines to skip (already processed as totals/tax)
+  const processedLines = new Set();
+  if (subtotalIndex >= 0) {
+    for (let j = subtotalIndex; j < Math.min(subtotalIndex + 3, lines.length); j++) {
+      processedLines.add(j);
+    }
+  }
+  if (taxLineIndex >= 0) {
+    for (let j = taxLineIndex; j < Math.min(taxLineIndex + 3, lines.length); j++) {
+      processedLines.add(j);
+    }
+  }
+  if (totalIndex >= 0) {
+    for (let j = totalIndex; j < Math.min(totalIndex + 5, lines.length); j++) {
+      processedLines.add(j);
+    }
+  }
+  
   let i = 0;
   while (i < lines.length) {
     const line = lines[i].trim();
     
-    if (!line || line.length < 2) {
+    if (!line || line.length < 2 || processedLines.has(i)) {
       i++;
       continue;
     }
@@ -338,18 +338,16 @@ function parseReceiptFromVision(text) {
       continue;
     }
 
-    // Skip lines with colons but no valid prices (headers)
+    // Skip headers with colons
     if (/:/.test(line)) {
       const priceMatches = [...line.matchAll(new RegExp(pricePattern.source, 'g'))];
       
-      // If it has a colon but no price, skip
       if (priceMatches.length === 0) {
         console.log(`Skipped (header with colon, no price): ${line}`);
         i++;
         continue;
       }
       
-      // If all "prices" are very small (likely codes/dates), skip
       const allSmall = priceMatches.every(m => parsePrice(m[1]) < 100);
       if (allSmall) {
         console.log(`Skipped (header with small numbers): ${line}`);
@@ -357,16 +355,57 @@ function parseReceiptFromVision(text) {
         continue;
       }
       
-      // If it's a payment/change line, skip
-      if (/^(tunai|tunal|cash|bayar|dibayar|kembalian|embalian|kembali|change)/i.test(line)) {
-        console.log(`Skipped (payment/change line): ${line}`);
+      if (/^(tunai|tunal|cash|bayar|payment|card|expired)/i.test(line)) {
+        console.log(`Skipped (payment/card line): ${line}`);
         i++;
         continue;
       }
     }
 
-    // NEW: Handle "ITEM × QTY PRICE" format (all on one line)
-    // Example: "THAI TEA & GREEN TEA × 2 20.000"
+    // NEW: Format "QTY" + "ITEM NAME" + "PRICE" (three lines)
+    // Example: "1" then "Nasi Putih." then "7.272"
+    if (i + 2 < lines.length) {
+      const isQtyOnly = /^(\d+)$/.test(line) && parseInt(line) > 0 && parseInt(line) < 100;
+      const nextLine = lines[i + 1].trim();
+      const lineAfterNext = lines[i + 2].trim();
+      
+      // Check if next line is item name (no price, mostly letters)
+      const hasNoPrice = !pricePattern.test(nextLine);
+      const hasLetters = /[a-zA-Z]/.test(nextLine);
+      
+      // Check if line after next is just a price
+      const isPriceOnly = /^(\d{1,3}(?:[,\.]\d{3})*(?:[,\.]\d{2})?)$/.test(lineAfterNext);
+      
+      if (isQtyOnly && hasNoPrice && hasLetters && isPriceOnly && !processedLines.has(i+1) && !processedLines.has(i+2)) {
+        const quantity = parseInt(line);
+        const itemName = nextLine.trim();
+        const price = parsePrice(lineAfterNext);
+        
+        // Validate
+        if (itemName.length >= 3 && price > 0 && !skipPatterns.some(p => p.test(itemName))) {
+          const unitPrice = price / quantity;
+          
+          const isDuplicate = items.some(item => 
+            item.name.toLowerCase() === itemName.toLowerCase() && 
+            Math.abs(item.price - price) < 0.01
+          );
+          
+          if (!isDuplicate) {
+            items.push({
+              name: itemName,
+              price: price,
+              quantity: quantity,
+              unitPrice: unitPrice
+            });
+            console.log(`✅ Three-line item: ${quantity} ${itemName} @ ${unitPrice} = ${price}`);
+            i += 3;
+            continue;
+          }
+        }
+      }
+    }
+
+    // Format: "ITEM × QTY PRICE" (single line)
     const singleLineQtyMatch = line.match(/^(.+?)\s*[×x]\s*(\d+)\s+(\d{1,3}(?:[,\.]\d{3})*(?:[,\.]\d{2})?)$/i);
     if (singleLineQtyMatch) {
       const itemName = singleLineQtyMatch[1].trim();
@@ -395,15 +434,11 @@ function parseReceiptFromVision(text) {
       }
     }
 
-    // Handle "ITEM × QTY" on one line, price on next
-    // Example: "ICE MOJITO × 1" followed by "8.000"
-    if (i + 1 < lines.length) {
+    // Format: "ITEM × QTY" then price on next line
+    if (i + 1 < lines.length && !processedLines.has(i+1)) {
       const nextLine = lines[i + 1].trim();
       
-      // Check if current line has × or x with quantity but no price
       const qtyNoPrice = line.match(/^(.+?)\s*[×x]\s*(\d+)$/i);
-      
-      // Check if next line is just a price
       const isNextLinePrice = /^(\d{1,3}(?:[,\.]\d{3})*(?:[,\.]\d{2})?)$/.test(nextLine);
       
       if (qtyNoPrice && isNextLinePrice) {
@@ -427,15 +462,49 @@ function parseReceiptFromVision(text) {
               unitPrice: unitPrice
             });
             console.log(`✅ Item (name+qty, price next line): ${quantity} ${itemName} @ ${unitPrice} = ${price}`);
-            i += 2; // Skip both lines
+            i += 2;
             continue;
           }
         }
       }
     }
 
-    // Handle format: name on one line, "qty price" on next
-    if (i + 1 < lines.length && !/\d/.test(line)) {
+    // Format: "QTY ITEM NAME" then price on next line
+    if (i + 1 < lines.length && !processedLines.has(i+1)) {
+      const nextLine = lines[i + 1].trim();
+      const qtyItemMatch = line.match(/^(\d+)\s+(.+)$/);
+      const isNextLinePrice = /^(\d{1,3}(?:[,\.]\d{3})*(?:[,\.]\d{2})?)$/.test(nextLine);
+      
+      if (qtyItemMatch && isNextLinePrice) {
+        const quantity = parseInt(qtyItemMatch[1]);
+        const itemName = qtyItemMatch[2].trim();
+        const price = parsePrice(nextLine);
+        
+        if (quantity > 0 && quantity < 100 && itemName.length >= 3 && price > 0 && !skipPatterns.some(p => p.test(itemName))) {
+          const unitPrice = price / quantity;
+          
+          const isDuplicate = items.some(item => 
+            item.name.toLowerCase() === itemName.toLowerCase() && 
+            Math.abs(item.price - price) < 0.01
+          );
+          
+          if (!isDuplicate) {
+            items.push({
+              name: itemName,
+              price: price,
+              quantity: quantity,
+              unitPrice: unitPrice
+            });
+            console.log(`✅ Item (qty+name, price next): ${quantity} ${itemName} @ ${unitPrice} = ${price}`);
+            i += 2;
+            continue;
+          }
+        }
+      }
+    }
+
+    // Format: name then "qty price"
+    if (i + 1 < lines.length && !/\d/.test(line) && !processedLines.has(i+1)) {
       const nextLine = lines[i + 1].trim();
       const qtyPriceMatch = nextLine.match(/^(\d+)\s+(?:Rp|IDR)?\s*(\d{1,3}(?:[,\.]\d{3})*(?:[,\.]\d{2})?)/i);
       
@@ -466,12 +535,12 @@ function parseReceiptFromVision(text) {
       }
     }
 
-    // Multi-line format with @ notation
+    // Multi-line with @ notation
     const itemMatch = line.match(itemLinePattern);
     const hasNextLine = i + 1 < lines.length;
     const hasLineAfterNext = i + 2 < lines.length;
     
-    if (hasNextLine && hasLineAfterNext) {
+    if (hasNextLine && hasLineAfterNext && !processedLines.has(i+1) && !processedLines.has(i+2)) {
       const nextLine = lines[i + 1].trim();
       const lineAfterNext = lines[i + 2].trim();
       
@@ -540,7 +609,7 @@ function parseReceiptFromVision(text) {
       }
     }
 
-    // Single-line format: "Item Name    10,000"
+    // Single-line: "Item Name    10,000"
     const priceMatches = [...line.matchAll(new RegExp(pricePattern.source, 'g'))];
     
     if (priceMatches.length >= 1) {
@@ -559,7 +628,8 @@ function parseReceiptFromVision(text) {
       const lastPrice = priceMatches[priceMatches.length - 1][1];
       const price = parsePrice(lastPrice);
 
-      if (price > 0 && price < 100000000) {
+      // Must be reasonable price
+      if (price > 0 && price < 100000000 && price > 100) { // > 100 to avoid small numbers
         let name = line;
         priceMatches.forEach(m => {
           name = name.replace(m[0], '');
@@ -578,7 +648,7 @@ function parseReceiptFromVision(text) {
           /percent|%/i,
           /^avg/i,
           /pajak/i,
-          /^(tunai|tunal|cash|bayar|dibayar|kembalian|embalian|kembali|change)/i,
+          /^(tunai|tunal|cash|bayar|card|expired|member|balance)/i,
         ];
         
         if (invalidNamePatterns.some(p => p.test(name))) {
