@@ -218,16 +218,26 @@ function parseReceiptFromVision(text) {
       taxName = `Tax ${taxPercent}%`;
     }
     
+    // FIXED: Filter out prices that look like percentages
     if (allPrices.length > 0) {
-      const lastPrice = allPrices[allPrices.length - 1][1];
-      const amount = parsePrice(lastPrice);
+      // Filter out the percentage number itself (e.g., "10.00" from "PB1 (10.00%)")
+      const validPrices = allPrices.filter(m => {
+        const val = parsePrice(m[1]);
+        // If value is same as taxPercent (or very close), it's the percentage, not the tax amount
+        return Math.abs(val - taxPercent) > 0.1;
+      });
       
-      if (amount > 0 && amount < 100000000) {
-        tax = {
-          name: taxName,
-          amount: Math.round(amount * 100) / 100
-        };
-        console.log(`✅ Found TAX: ${tax.name} = ${tax.amount} from line ${taxLineIndex}`);
+      if (validPrices.length > 0) {
+        const lastPrice = validPrices[validPrices.length - 1][1];
+        const amount = parsePrice(lastPrice);
+        
+        if (amount > 0 && amount < 100000000) {
+          tax = {
+            name: taxName,
+            amount: Math.round(amount * 100) / 100
+          };
+          console.log(`✅ Found TAX: ${tax.name} = ${tax.amount} from line ${taxLineIndex}`);
+        }
       }
     }
     
