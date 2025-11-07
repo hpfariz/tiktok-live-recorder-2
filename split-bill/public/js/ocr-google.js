@@ -1,4 +1,4 @@
-// Google Cloud Vision OCR Client
+// Google Cloud Vision OCR Client - ALWAYS USE GOOGLE VISION (No Tesseract fallback)
 
 async function processReceiptWithGoogle(file, progressCallback) {
   try {
@@ -26,15 +26,7 @@ async function processReceiptWithGoogle(file, progressCallback) {
     
     if (!response.ok) {
       const error = await response.json();
-      if (error.fallback) {
-        // Fallback to Tesseract
-        console.log('Google Vision not available, falling back to Tesseract...');
-        if (window.OCR && window.OCR.processReceipt) {
-          return await window.OCR.processReceipt(file, progressCallback);
-        }
-        throw new Error('OCR service not available');
-      }
-      throw new Error(error.error || 'OCR failed');
+      throw new Error(error.error || error.message || 'OCR processing failed');
     }
     
     const result = await response.json();
@@ -47,12 +39,7 @@ async function processReceiptWithGoogle(file, progressCallback) {
     
   } catch (error) {
     console.error('Google Vision error:', error);
-    // Fallback to Tesseract if available
-    if (window.OCR && window.OCR.processReceipt) {
-      console.log('Falling back to Tesseract...');
-      return await window.OCR.processReceipt(file, progressCallback);
-    }
-    throw error;
+    throw new Error(`OCR failed: ${error.message}. Please try again or add items manually.`);
   }
 }
 

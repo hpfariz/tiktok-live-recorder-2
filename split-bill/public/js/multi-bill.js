@@ -1,4 +1,4 @@
-// Multi-Bill JavaScript - UPDATED with fixes and improvements
+// Multi-Bill JavaScript - UPDATED with all fixes
 const BASE_PATH = window.location.pathname.match(/^\/[^\/]+/)?.[0] || '';
 const API_BASE = window.location.origin + BASE_PATH;
 
@@ -12,6 +12,7 @@ let currentOCRResult = null;
 let currentSplitItem = null;
 let currentTaxItem = null;
 let currentEditItem = null;
+let manualReceiptItems = []; // For building manual receipt with multiple items
 
 // Get bill ID from URL
 function getBillId() {
@@ -101,7 +102,7 @@ async function addParticipant() {
   }
 }
 
-// FIX #1: Remove participant with API call to delete from database
+// Remove participant
 async function removeParticipant(index) {
   const participant = participants[index];
   
@@ -118,7 +119,6 @@ async function removeParticipant(index) {
       return;
     }
     
-    // Remove from local array
     participants.splice(index, 1);
     renderParticipants();
   } catch (error) {
@@ -148,6 +148,15 @@ function renderParticipants() {
 function showAddReceiptModal() {
   document.getElementById('add-receipt-modal').style.display = 'block';
   
+  // Reset modal
+  document.getElementById('receipt-file').value = '';
+  document.getElementById('receipt-preview').style.display = 'none';
+  document.getElementById('ocr-results').style.display = 'none';
+  document.getElementById('ocr-progress').style.display = 'none';
+  document.getElementById('process-receipt-btn').style.display = 'inline-block';
+  document.getElementById('save-receipt-btn').style.display = 'none';
+  currentOCRResult = null;
+  
   // Setup file preview
   const fileInput = document.getElementById('receipt-file');
   const previewDiv = document.getElementById('receipt-preview');
@@ -160,6 +169,7 @@ function showAddReceiptModal() {
       reader.onload = (e) => {
         previewImg.src = e.target.result;
         previewDiv.style.display = 'block';
+        document.getElementById('process-receipt-btn').disabled = false;
       };
       reader.readAsDataURL(file);
     }
@@ -174,6 +184,7 @@ function closeAddReceiptModal() {
   document.getElementById('ocr-results').style.display = 'none';
   document.getElementById('ocr-progress').style.display = 'none';
   document.getElementById('process-receipt-btn').style.display = 'inline-block';
+  document.getElementById('process-receipt-btn').disabled = true;
   document.getElementById('save-receipt-btn').style.display = 'none';
   currentOCRResult = null;
 }
@@ -192,7 +203,7 @@ async function processReceipt() {
   document.getElementById('process-receipt-btn').style.display = 'none';
   
   try {
-    // Process with OCR
+    // Process with Google Vision OCR
     const result = await window.GoogleOCR.processReceipt(file, (progress) => {
       document.getElementById('ocr-percent').textContent = progress;
     });
@@ -208,7 +219,7 @@ async function processReceipt() {
     document.getElementById('ocr-results').style.display = 'block';
     document.getElementById('save-receipt-btn').style.display = 'inline-block';
     
-    // IMPROVEMENT #4: Render items with better formatting
+    // Render items with better formatting
     const itemsList = document.getElementById('ocr-items-list');
     const allItems = [
       ...(result.parsed.items || []),
@@ -233,13 +244,13 @@ async function processReceipt() {
     
   } catch (error) {
     console.error('OCR Error:', error);
-    alert('OCR processing failed. Please try again or add items manually.');
+    alert(`OCR processing failed: ${error.message}\n\nPlease try again or add items manually.`);
     document.getElementById('ocr-progress').style.display = 'none';
     document.getElementById('process-receipt-btn').style.display = 'inline-block';
   }
 }
 
-// Save receipt
+// Save receipt - FIXED
 async function saveReceipt() {
   const fileInput = document.getElementById('receipt-file');
   const file = fileInput.files[0];
@@ -250,22 +261,35 @@ async function saveReceipt() {
   }
   
   try {
+    console.log('Starting receipt upload...');
+    
     // Upload receipt
     const formData = new FormData();
     formData.append('receipt', file);
     formData.append('ocr_data', JSON.stringify(currentOCRResult));
     
+    console.log('Uploading receipt to server...');
     const response = await fetch(`${API_BASE}/api/bills/${billId}/receipt`, {
       method: 'POST',
       body: formData
     });
     
-    if (!response.ok) throw new Error('Failed to upload receipt');
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Failed to upload receipt');
+    }
     
     const receiptData = await response.json();
+    console.log('Receipt uploaded successfully:', receiptData);
+    
+    if (!receiptData.id) {
+      throw new Error('Receipt ID not returned from server');
+    }
     
     // Add items to receipt
     const items = currentOCRResult.items || [];
+    console.log(`Adding ${items.length} items to receipt...`);
+    
     for (const item of items) {
       await addItemToReceipt(
         receiptData.id, 
@@ -281,6 +305,7 @@ async function saveReceipt() {
     // Add tax/charges
     if (currentOCRResult.charges) {
       if (currentOCRResult.charges.tax) {
+        console.log('Adding tax item...');
         await addItemToReceipt(
           receiptData.id, 
           currentOCRResult.charges.tax.name, 
@@ -292,6 +317,7 @@ async function saveReceipt() {
         );
       }
       if (currentOCRResult.charges.serviceCharge) {
+        console.log('Adding service charge...');
         await addItemToReceipt(
           receiptData.id, 
           currentOCRResult.charges.serviceCharge.name, 
@@ -303,6 +329,7 @@ async function saveReceipt() {
         );
       }
       if (currentOCRResult.charges.gratuity) {
+        console.log('Adding gratuity...');
         await addItemToReceipt(
           receiptData.id, 
           currentOCRResult.charges.gratuity.name, 
@@ -315,13 +342,18 @@ async function saveReceipt() {
       }
     }
     
+    console.log('Receipt saved successfully, reloading bill data...');
+    
     // Reload bill data
     await loadBill();
     renderReceipts();
     closeAddReceiptModal();
+    
+    // Show success message
+    alert('Receipt saved successfully!');
   } catch (error) {
     console.error('Error saving receipt:', error);
-    alert('Failed to save receipt');
+    alert(`Failed to save receipt: ${error.message}`);
   }
 }
 
@@ -341,7 +373,10 @@ async function addItemToReceipt(receiptId, name, price, isTax = false, chargeTyp
       })
     });
     
-    if (!response.ok) throw new Error('Failed to add item');
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Failed to add item');
+    }
     
     return await response.json();
   } catch (error) {
@@ -350,25 +385,83 @@ async function addItemToReceipt(receiptId, name, price, isTax = false, chargeTyp
   }
 }
 
-// Show add manual item modal
+// FIX ISSUE 5: Show add manual items modal (allows multiple items)
 function showAddManualItemModal() {
+  manualReceiptItems = [];
+  renderManualItemsList();
   document.getElementById('add-manual-modal').style.display = 'block';
 }
 
 // Close add manual item modal
 function closeAddManualItemModal() {
   document.getElementById('add-manual-modal').style.display = 'none';
+  manualReceiptItems = [];
   document.getElementById('manual-item-name').value = '';
   document.getElementById('manual-item-price').value = '';
 }
 
-// Save manual item
-async function saveManualItem() {
+// Add item to manual receipt list (not saved yet)
+function addManualItemToList() {
   const name = document.getElementById('manual-item-name').value.trim();
   const price = parseFloat(document.getElementById('manual-item-price').value);
   
   if (!name || !price || price <= 0) {
     alert('Please enter valid item name and price');
+    return;
+  }
+  
+  manualReceiptItems.push({ name, price });
+  
+  document.getElementById('manual-item-name').value = '';
+  document.getElementById('manual-item-price').value = '';
+  
+  renderManualItemsList();
+}
+
+// Remove item from manual receipt list
+function removeManualItemFromList(index) {
+  manualReceiptItems.splice(index, 1);
+  renderManualItemsList();
+}
+
+// Render manual items list
+function renderManualItemsList() {
+  const container = document.getElementById('manual-items-list');
+  
+  if (manualReceiptItems.length === 0) {
+    container.innerHTML = '<div class="text-secondary text-sm">No items added yet</div>';
+    document.getElementById('save-manual-receipt-btn').disabled = true;
+    return;
+  }
+  
+  const total = manualReceiptItems.reduce((sum, item) => sum + item.price, 0);
+  
+  container.innerHTML = `
+    ${manualReceiptItems.map((item, index) => `
+      <div class="item-list-item">
+        <div class="flex-between">
+          <span>${item.name}</span>
+          <div class="flex-gap">
+            <span>${window.SplitBillUtils.formatPrice(item.price, billData.currency_symbol)}</span>
+            <button class="btn btn-danger btn-sm" onclick="removeManualItemFromList(${index})">×</button>
+          </div>
+        </div>
+      </div>
+    `).join('')}
+    <div class="divider"></div>
+    <div class="flex-between">
+      <strong>Total:</strong>
+      <strong>${window.SplitBillUtils.formatPrice(total, billData.currency_symbol)}</strong>
+    </div>
+  `;
+  
+  document.getElementById('save-manual-receipt-btn').disabled = false;
+}
+
+// Save manual receipt with all items
+async function saveManualReceipt() {
+  if (manualReceiptItems.length === 0) {
+    alert('Please add at least one item');
     return;
   }
   
@@ -384,16 +477,18 @@ async function saveManualItem() {
     
     const receiptData = await receiptResponse.json();
     
-    // Add item (manual items default to quantity 1)
-    await addItemToReceipt(receiptData.id, name, price, false, null, 1, price);
+    // Add all items
+    for (const item of manualReceiptItems) {
+      await addItemToReceipt(receiptData.id, item.name, item.price, false, null, 1, item.price);
+    }
     
     // Reload
     await loadBill();
     renderReceipts();
     closeAddManualItemModal();
   } catch (error) {
-    console.error('Error saving manual item:', error);
-    alert('Failed to save manual item');
+    console.error('Error saving manual receipt:', error);
+    alert('Failed to save manual receipt');
   }
 }
 
@@ -407,7 +502,7 @@ function getPayerName(receipt) {
   return payment.payer_name;
 }
 
-// IMPROVEMENT #5: Format price with thousand separators
+// Format price with thousand separators
 function formatPrice(amount) {
   return window.SplitBillUtils.formatPrice(amount, billData.currency_symbol);
 }
@@ -430,7 +525,6 @@ function renderReceipts() {
     const total = items.reduce((sum, item) => sum + item.price, 0);
     const itemCount = items.filter(i => !i.is_tax_or_charge).length;
     
-    // Check if receipt is configured (has splits)
     const isConfigured = items.some(i => i.splits && i.splits.length > 0);
     const statusBadge = isConfigured 
       ? '<span class="badge" style="background: #e8e8e8;">✓ Configured</span>'
@@ -488,7 +582,6 @@ async function deleteReceipt(index) {
     
     if (!response.ok) throw new Error('Failed to delete receipt');
     
-    // Reload bill data
     await loadBill();
     renderReceipts();
   } catch (error) {
@@ -508,7 +601,6 @@ async function deleteItemFromReceipt(itemId) {
     
     if (!response.ok) throw new Error('Failed to delete item');
     
-    // Reload current receipt data
     await loadBill();
     const receiptIndex = receipts.findIndex(r => r.id === currentReceipt.id);
     currentReceipt = receipts[receiptIndex];
@@ -565,13 +657,11 @@ async function saveEditedItem() {
     
     if (!response.ok) throw new Error('Failed to update item');
     
-    // Update local data
     currentEditItem.name = name;
     currentEditItem.price = price;
     
     closeEditItemModal();
     
-    // Reload current receipt data
     await loadBill();
     const receiptIndex = receipts.findIndex(r => r.id === currentReceipt.id);
     currentReceipt = receipts[receiptIndex];
@@ -581,6 +671,44 @@ async function saveEditedItem() {
   } catch (error) {
     console.error('Error updating item:', error);
     alert('Failed to update item');
+  }
+}
+
+// FIX ISSUE 4: Show add new item to receipt modal
+function showAddItemToReceiptModal() {
+  document.getElementById('new-receipt-item-name').value = '';
+  document.getElementById('new-receipt-item-price').value = '';
+  document.getElementById('add-item-to-receipt-modal').style.display = 'block';
+}
+
+// Close add item to receipt modal
+function closeAddItemToReceiptModal() {
+  document.getElementById('add-item-to-receipt-modal').style.display = 'none';
+}
+
+// Save new item to current receipt
+async function saveNewItemToReceipt() {
+  const name = document.getElementById('new-receipt-item-name').value.trim();
+  const price = parseFloat(document.getElementById('new-receipt-item-price').value);
+  
+  if (!name || !price || price <= 0) {
+    alert('Please enter valid item name and price');
+    return;
+  }
+  
+  try {
+    await addItemToReceipt(currentReceipt.id, name, price, false, null, 1, price);
+    
+    closeAddItemToReceiptModal();
+    
+    await loadBill();
+    const receiptIndex = receipts.findIndex(r => r.id === currentReceipt.id);
+    currentReceipt = receipts[receiptIndex];
+    
+    renderConfigureItems();
+  } catch (error) {
+    console.error('Error adding item:', error);
+    alert('Failed to add item');
   }
 }
 
@@ -596,10 +724,7 @@ function configureReceipt(index) {
   document.getElementById('configure-receipt-modal').style.display = 'block';
   document.getElementById('configure-receipt-title').textContent = `Receipt ${index + 1}`;
   
-  // Render items for split configuration
   renderConfigureItems();
-  
-  // Render tax items for distribution configuration
   renderConfigureTaxes();
   
   // Populate payer select
@@ -607,7 +732,6 @@ function configureReceipt(index) {
   payerSelect.innerHTML = '<option value="">Select payer...</option>' +
     participants.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
   
-  // Pre-select payer if already set
   const existingPayment = billData.payments?.find(pay => pay.receipt_id === currentReceipt.id);
   if (existingPayment) {
     payerSelect.value = existingPayment.payer_id;
@@ -636,7 +760,7 @@ function getFormattedSplitNames(splits) {
   }
 }
 
-// Render items for split configuration with improved formatting
+// Render items for split configuration
 function renderConfigureItems() {
   const container = document.getElementById('configure-items-list');
   const items = currentReceipt.items.filter(item => !item.is_tax_or_charge);
@@ -650,7 +774,6 @@ function renderConfigureItems() {
     const splitCount = (item.splits || []).length;
     const splitText = getFormattedSplitNames(item.splits);
     
-    // IMPROVEMENT #4: Better item display
     const displayName = window.SplitBillUtils.formatItemDisplayHTML(item, billData.currency_symbol);
     const displayPrice = formatPrice(item.price);
 
@@ -675,10 +798,7 @@ function renderConfigureItems() {
   }).join('');
 }
 
-// Continue with remaining functions...
-// (Character limit reached, continuing in next file)
-
-// Show add manual tax modal (for current receipt)
+// FIX ISSUE 3: Show add manual tax modal (always visible)
 function showAddManualTaxModal() {
   document.getElementById('add-manual-tax-modal').style.display = 'block';
 }
@@ -706,7 +826,7 @@ function updateManualTaxInput() {
   }
 }
 
-// Save manual tax (for current receipt)
+// Save manual tax
 async function saveManualTax() {
   if (!currentReceipt) return;
   
@@ -755,7 +875,7 @@ async function saveManualTax() {
   }
 }
 
-// Show add manual service charge modal (for current receipt)
+// Show add manual service charge modal
 function showAddManualServiceModal() {
   document.getElementById('add-manual-service-modal').style.display = 'block';
 }
@@ -783,7 +903,7 @@ function updateManualServiceInput() {
   }
 }
 
-// Save manual service charge (for current receipt)
+// Save manual service charge
 async function saveManualService() {
   if (!currentReceipt) return;
   
@@ -832,17 +952,18 @@ async function saveManualService() {
   }
 }
 
-// Render tax charges with improved formatting
+// Render tax charges
 function renderConfigureTaxes() {
   const container = document.getElementById('configure-tax-list');
   const taxItems = currentReceipt.items.filter(item => item.is_tax_or_charge);
   
+  // FIX ISSUE 3: Always show tax section with buttons
+  document.getElementById('configure-tax-section').style.display = 'block';
+  
   if (taxItems.length === 0) {
-    document.getElementById('configure-tax-section').style.display = 'none';
+    container.innerHTML = '<div class="text-secondary text-sm">No tax or service charges yet. Click "+ Add Tax" or "+ Add Service Charge" to add one.</div>';
     return;
   }
-  
-  document.getElementById('configure-tax-section').style.display = 'block';
   
   container.innerHTML = taxItems.map(item => {
     const taxDist = item.tax_distribution;
@@ -1189,5 +1310,6 @@ document.addEventListener('click', (e) => {
     closeEditItemModal();
     closeAddManualTaxModal();
     closeAddManualServiceModal();
+    closeAddItemToReceiptModal();
   }
 });

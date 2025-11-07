@@ -22,7 +22,7 @@
           📸 Add Receipt
         </button>
         <button type="button" class="btn btn-secondary" onclick="showAddManualItemModal()">
-          ✏️ Add Manual Item
+          ✏️ Add Manual Items
         </button>
       </div>
 
@@ -95,7 +95,7 @@
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" onclick="closeAddReceiptModal()">Cancel</button>
-          <button type="button" class="btn btn-primary" id="process-receipt-btn" onclick="processReceipt()">
+          <button type="button" class="btn btn-primary" id="process-receipt-btn" onclick="processReceipt()" disabled>
             Process Receipt
           </button>
           <button type="button" class="btn btn-primary" id="save-receipt-btn" style="display: none;" onclick="saveReceipt()">
@@ -106,12 +106,12 @@
     </div>
   </div>
 
-  <!-- Add Manual Item Modal -->
+  <!-- Add Manual Items Modal - UPDATED to support multiple items -->
   <div id="add-manual-modal" style="display: none;">
     <div class="modal-overlay">
       <div class="modal">
         <div class="modal-header">
-          <h3 class="modal-title">Add Manual Item</h3>
+          <h3 class="modal-title">Add Manual Items</h3>
         </div>
         <div class="modal-body">
           <div class="form-group">
@@ -123,10 +123,17 @@
             <label class="form-label">Amount</label>
             <input type="number" id="manual-item-price" class="form-input" placeholder="0.00" step="0.01">
           </div>
+
+          <button type="button" class="btn btn-secondary btn-block" onclick="addManualItemToList()">+ Add Item</button>
+
+          <div class="divider"></div>
+
+          <div class="card-title">Items in this receipt</div>
+          <div id="manual-items-list"></div>
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" onclick="closeAddManualItemModal()">Cancel</button>
-          <button type="button" class="btn btn-primary" onclick="saveManualItem()">Save Item</button>
+          <button type="button" class="btn btn-primary" id="save-manual-receipt-btn" onclick="saveManualReceipt()" disabled>Save Receipt</button>
         </div>
       </div>
     </div>
@@ -146,16 +153,19 @@
           <p class="text-secondary text-sm mb-2">Assign each item to participants</p>
           <div id="configure-items-list"></div>
 
+          <!-- Add New Item Button - NEW for Issue 4 -->
+          <button type="button" class="btn btn-secondary btn-sm mt-2" onclick="showAddItemToReceiptModal()">+ Add New Item</button>
+
           <div class="divider"></div>
 
-          <!-- Tax & Charges Section -->
+          <!-- Tax & Charges Section - ALWAYS VISIBLE (Issue 3) -->
           <div id="configure-tax-section">
             <div class="card-title">Tax & Service Charges</div>
             <p class="text-secondary text-sm mb-2">Configure how taxes are distributed</p>
             <div id="configure-tax-list"></div>
             
             <div class="form-group mt-2">
-              <label class="form-label">Add Tax or Service Charge Manually</label>
+              <label class="form-label">Add Tax or Service Charge</label>
               <div class="flex flex-gap">
                 <button type="button" class="btn btn-secondary btn-sm" onclick="showAddManualTaxModal()">+ Add Tax</button>
                 <button type="button" class="btn btn-secondary btn-sm" onclick="showAddManualServiceModal()">+ Add Service Charge</button>
@@ -176,6 +186,31 @@
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" onclick="closeConfigureReceiptModal()">Close</button>
           <button type="button" class="btn btn-primary" onclick="saveReceiptConfiguration()">Save Configuration</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Item to Receipt Modal - NEW for Issue 4 -->
+  <div id="add-item-to-receipt-modal" style="display: none;">
+    <div class="modal-overlay">
+      <div class="modal">
+        <div class="modal-header">
+          <h3 class="modal-title">Add New Item to Receipt</h3>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label">Item Name</label>
+            <input type="text" id="new-receipt-item-name" class="form-input" placeholder="e.g., Coffee">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Price</label>
+            <input type="number" id="new-receipt-item-price" class="form-input" placeholder="0.00" step="0.01">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeAddItemToReceiptModal()">Cancel</button>
+          <button type="button" class="btn btn-primary" onclick="saveNewItemToReceipt()">Add Item</button>
         </div>
       </div>
     </div>
@@ -272,7 +307,7 @@
     </div>
   </div>
 
-  <!-- Item Split Modal (Same as Single Bill) -->
+  <!-- Item Split Modal -->
   <div id="split-modal" style="display: none;">
     <div class="modal-overlay">
       <div class="modal">
@@ -290,7 +325,7 @@
     </div>
   </div>
 
-  <!-- Tax Distribution Modal (Same as Single Bill) -->
+  <!-- Tax Distribution Modal -->
   <div id="tax-modal" style="display: none;">
     <div class="modal-overlay">
       <div class="modal">
