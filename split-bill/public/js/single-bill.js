@@ -1,4 +1,4 @@
-// Single Bill JavaScript - UPDATED with fixes and improvements
+// Single Bill JavaScript - UPDATED with all fixes and improvements
 const BASE_PATH = window.location.pathname.match(/^\/[^\/]+/)?.[0] || '';
 const API_BASE = window.location.origin + BASE_PATH;
 
@@ -82,7 +82,7 @@ function setupReceiptUpload() {
   processBtn.addEventListener('click', processReceipt);
 }
 
-// Process receipt with OCR
+// Process receipt with OCR - IMPROVED ERROR HANDLING
 async function processReceipt() {
   const fileInput = document.getElementById('receipt-file');
   const file = fileInput.files[0];
@@ -96,7 +96,9 @@ async function processReceipt() {
   document.getElementById('process-ocr-btn').disabled = true;
   
   try {
-    // Process with OCR
+    console.log('Starting OCR process...');
+    
+    // Process with Google Vision OCR
     const result = await window.GoogleOCR.processReceipt(file, (progress) => {
       document.getElementById('ocr-percent').textContent = progress;
     });
@@ -104,6 +106,8 @@ async function processReceipt() {
     if (!result.success) {
       throw new Error(result.error || 'OCR failed');
     }
+    
+    console.log('OCR successful, uploading receipt...');
     
     // Upload receipt to server
     const formData = new FormData();
@@ -115,13 +119,24 @@ async function processReceipt() {
       body: formData
     });
     
-    if (!response.ok) throw new Error('Failed to upload receipt');
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Failed to upload receipt');
+    }
     
     const receiptData = await response.json();
     receiptId = receiptData.id;
     
+    console.log('Receipt uploaded, ID:', receiptId);
+    
+    if (!receiptId) {
+      throw new Error('Receipt ID not returned from server');
+    }
+    
     // Add items from OCR
     if (result.parsed.items && result.parsed.items.length > 0) {
+      console.log(`Adding ${result.parsed.items.length} items...`);
+      
       for (const item of result.parsed.items) {
         await addItemToServer(
           item.name, 
@@ -137,20 +152,48 @@ async function processReceipt() {
     // Add tax/charges
     if (result.parsed.charges) {
       if (result.parsed.charges.tax) {
-        await addItemToServer(result.parsed.charges.tax.name, result.parsed.charges.tax.amount, true, 'tax');
+        console.log('Adding tax item...');
+        await addItemToServer(
+          result.parsed.charges.tax.name, 
+          result.parsed.charges.tax.amount, 
+          true, 
+          'tax',
+          1,
+          null
+        );
       }
       if (result.parsed.charges.serviceCharge) {
-        await addItemToServer(result.parsed.charges.serviceCharge.name, result.parsed.charges.serviceCharge.amount, true, 'service');
+        console.log('Adding service charge...');
+        await addItemToServer(
+          result.parsed.charges.serviceCharge.name, 
+          result.parsed.charges.serviceCharge.amount, 
+          true, 
+          'service',
+          1,
+          null
+        );
       }
       if (result.parsed.charges.gratuity) {
-        await addItemToServer(result.parsed.charges.gratuity.name, result.parsed.charges.gratuity.amount, true, 'gratuity');
+        console.log('Adding gratuity...');
+        await addItemToServer(
+          result.parsed.charges.gratuity.name, 
+          result.parsed.charges.gratuity.amount, 
+          true, 
+          'gratuity',
+          1,
+          null
+        );
       }
     }
     
+    console.log('All items added successfully');
+    
+    // Go to next step
     goToStep(2);
+    
   } catch (error) {
     console.error('OCR Error:', error);
-    alert('OCR processing failed. You can skip and add items manually.');
+    alert(`OCR processing failed: ${error.message}\n\nPlease try again or add items manually.`);
     document.getElementById('ocr-progress').style.display = 'none';
     document.getElementById('process-ocr-btn').disabled = false;
   }
@@ -159,6 +202,8 @@ async function processReceipt() {
 // Skip OCR
 async function skipOCR() {
   try {
+    console.log('Skipping OCR, creating empty receipt...');
+    
     // Create empty receipt
     const response = await fetch(`${API_BASE}/api/bills/${billId}/receipt`, {
       method: 'POST',
@@ -166,21 +211,30 @@ async function skipOCR() {
       body: JSON.stringify({})
     });
     
-    if (!response.ok) throw new Error('Failed to create receipt');
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Failed to create receipt');
+    }
     
     const receiptData = await response.json();
     receiptId = receiptData.id;
     
+    console.log('Empty receipt created, ID:', receiptId);
+    
     goToStep(2);
   } catch (error) {
     console.error('Error:', error);
-    alert('Failed to skip OCR');
+    alert(`Failed to skip OCR: ${error.message}`);
   }
 }
 
-// Add item to server
+// Add item to server - IMPROVED ERROR HANDLING
 async function addItemToServer(name, price, isTax = false, chargeType = null, quantity = 1, unitPrice = null) {
   try {
+    if (!receiptId) {
+      throw new Error('No receipt ID - cannot add items');
+    }
+    
     const response = await fetch(`${API_BASE}/api/bills/${billId}/receipt/${receiptId}/item`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -195,7 +249,10 @@ async function addItemToServer(name, price, isTax = false, chargeType = null, qu
       })
     });
     
-    if (!response.ok) throw new Error('Failed to add item');
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Failed to add item');
+    }
     
     const itemData = await response.json();
     items.push({ ...itemData, is_tax_or_charge: isTax ? 1 : 0, charge_type: chargeType, splits: [] });
@@ -203,6 +260,8 @@ async function addItemToServer(name, price, isTax = false, chargeType = null, qu
     if (isTax) {
       taxItems.push(itemData);
     }
+    
+    console.log('Item added:', name, price);
     
     return itemData;
   } catch (error) {
@@ -227,7 +286,7 @@ async function addItem() {
     document.getElementById('new-item-name').value = '';
     document.getElementById('new-item-price').value = '';
   } catch (error) {
-    alert('Failed to add item');
+    alert(`Failed to add item: ${error.message}`);
   }
 }
 
@@ -306,7 +365,7 @@ async function deleteItem(itemId, index) {
   }
 }
 
-// IMPROVEMENT #5: Format price helper
+// Format price helper
 function formatPrice(amount) {
   return window.SplitBillUtils.formatPrice(amount, billData.currency_symbol);
 }
@@ -323,7 +382,6 @@ function renderItems() {
   const regularItems = items.filter(item => !item.is_tax_or_charge);
   
   container.innerHTML = regularItems.map((item, index) => {
-    // IMPROVEMENT #4: Better item display
     const displayName = window.SplitBillUtils.formatItemDisplayHTML(item, billData.currency_symbol);
     const displayPrice = formatPrice(item.price);
     
@@ -389,7 +447,7 @@ async function addParticipant() {
   }
 }
 
-// FIX #1: Remove participant with API call
+// Remove participant with API call
 async function removeParticipant(index) {
   const participant = participants[index];
   
@@ -622,7 +680,6 @@ function renderSplitItems() {
     const splitCount = (item.splits || []).length;
     const splitText = getFormattedSplitNames(item.splits);
     
-    // IMPROVEMENT #4: Better item display
     const displayName = window.SplitBillUtils.formatItemDisplayHTML(item, billData.currency_symbol);
     const displayPrice = formatPrice(item.price);
 
